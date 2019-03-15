@@ -17,8 +17,9 @@ namespace FastHashSet
 		// this is the size of the non-hash array used for small
 		private const int NoHashArraySize = 8;
 
-		// this is the # of initial nodes (16) plus 1 for the first node (node at index 0) that doesn't get used
-		private const int InitialNodeArraySize = 17;
+		// this is the # of initial nodes for the buckets array after going into hashing after using the noHashArray
+		// this is 16 + 1 for the first node (node at index 0) which doesn't get used because 0 is the NullIndex
+		private const int InitialBucketsArraySize = 17;
 
 		// this indicates end of chain if the nextIndex of a node has this value and also indicates no chain if an indexArray element has this value
 		private const int NullIndex = 0;
@@ -448,7 +449,7 @@ namespace FastHashSet
 			bool setThresh = false;
 			if (capacity == -1)
 			{
-				newNodeArraySize = InitialNodeArraySize;
+				newNodeArraySize = InitialBucketsArraySize;
 
 				newIndexArraySize = slotsSizeArray[0];
 				if (newIndexArraySize < newNodeArraySize)
@@ -884,7 +885,7 @@ namespace FastHashSet
 			{
 				if (oldArraySize == 1)
 				{
-					increaseInSize = InitialNodeArraySize - 1;
+					increaseInSize = InitialBucketsArraySize - 1;
 				}
 				else
 				{
