@@ -38,17 +38,17 @@ namespace FastHashSet
 			int chainCount = 0;
 			if (isHashing)
 			{
-				for (int i = 0; i < indexArray.Length; i++)
+				for (int i = 0; i < slots.Length; i++)
 				{
-					int index = indexArray[i];
+					int index = slots[i];
 					if (index != NullIndex)
 					{
 						chainCount++;
 						int itemsInChain = 1;
 
-						while (nodeArray[index].nextIndex != NullIndex)
+						while (buckets[index].nextIndex != NullIndex)
 						{
-							index = nodeArray[index].nextIndex;
+							index = buckets[index].nextIndex;
 							itemsInChain++;
 						}
 
@@ -85,22 +85,22 @@ namespace FastHashSet
 		{
 			if (isHashing)
 			{
-				TNode[] newNodeArray = new TNode[nodeArray.Length];
+				TNode[] newNodeArray = new TNode[buckets.Length];
 
 				// copy elements using the indexArray chains so there is better locality in the chains
 				int index;
 				int nextIndex;
 				int newIndex = 0;
-				for (int i = 0; i < indexArray.Length; i++)
+				for (int i = 0; i < slots.Length; i++)
 				{
-					index = indexArray[i];
+					index = slots[i];
 					if (index != NullIndex)
 					{
-						indexArray[i] = newIndex + 1;
+						slots[i] = newIndex + 1;
 						while (true)
 						{
 							newIndex++;
-							ref TNode t = ref nodeArray[index];
+							ref TNode t = ref buckets[index];
 							ref TNode tNew = ref newNodeArray[newIndex];
 							nextIndex = t.nextIndex;
 
@@ -120,7 +120,7 @@ namespace FastHashSet
 				newIndex++;
 				nextBlankIndex = newIndex;
 				firstBlankAtEndIndex = newIndex;
-				nodeArray = newNodeArray;
+				buckets = newNodeArray;
 			}
 		}
 	}

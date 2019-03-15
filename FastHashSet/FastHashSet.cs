@@ -15,11 +15,10 @@ namespace FastHashSet
 	public partial class FastHashSet<T> : ICollection<T>, IEnumerable<T>, IEnumerable, IReadOnlyCollection<T>, ISet<T> //, ISerializable, IDeserializationCallback - ??? implement this within #define
     {
 		// this is the size of the non-hash array used for small
-		private const int InitialItemsArraySize = 8;
-		//private const int InitialItemsArraySize = 10;
-		//???private const int InitialItemsArraySize = 14;
-		//private const int InitialNodeArraySize = 33; // this is the # of initial nodes (32) plus 1 for the first node (node at index 0) that doesn't get used
-		private const int InitialNodeArraySize = 17; // this is the # of initial nodes (16) plus 1 for the first node (node at index 0) that doesn't get used
+		private const int NoHashArraySize = 8;
+
+		// this is the # of initial nodes (16) plus 1 for the first node (node at index 0) that doesn't get used
+		private const int InitialNodeArraySize = 17;
 
 		// this indicates end of chain if the nextIndex of a node has this value and also indicates no chain if an indexArray element has this value
 		private const int NullIndex = 0;
@@ -30,10 +29,10 @@ namespace FastHashSet
 		// use this instead of the negate negative logic when getting hashindex - this saves an if (hashindex < 0) which can be the source of bad branch prediction
 		private const int HighBitNotSet = unchecked((int)0b0111_1111_1111_1111_1111_1111_1111_1111);
 
-		// The Mark... constants are for marking, unmarking, and checking if an item is marked.
+		// The Mark... constants below are for marking, unmarking, and checking if an item is marked.
 		// This is usefull for some set operations.
 
-		// doing an | (bitwise or) with this and the nextIndex marks the node, setting the bit back will give the original nextIndex value since
+		// doing an | (bitwise or) with this and the nextIndex marks the node, setting the bit back will give the original nextIndex value
 		private const int MarkNextIndexBitMask = unchecked((int)0b1000_0000_0000_0000_0000_0000_0000_0000);
 		
 		// doing an & (bitwise and) with this and the nextIndex sets it back to the original value (unmarks it)
@@ -44,52 +43,20 @@ namespace FastHashSet
 		private const int LargestPrimeLessThanMaxInt = 2147483629;
 
 		// what if someone wants less than double the # of items allocated next time??? - need to get a prime between 2 numbers in this list? - just let them specify the number, which maybe should be a prime
-		//private static readonly int[] indexArraySizeArray = { 7, 17, 37, 79, 163, 331, 673, 1361, 2729, 5471, 10_949, 21_911, 43_853, 87_719, 175_447,
-		//	350_899, 701_819, 1_403_641, 2_807_303, 5_614_657, 11_229_331, 22_458_671, 44_917_381, 89_834_777, 179_669_557, 359_339_171, 718_678_369, 1_437_356_741, LargestPrimeLessThanMaxInt /* don't use int.MaxValue (2147483647), because some index values might go 2 past the size of arrays and we don't want them to roll over to negative values */ };
 
 		// these are primes above the .75 loadfactor of the power of 2 except from 30,000 through 80,000, where we conserve space to help with cache space
-		private static readonly int[] indexArraySizeArray = { 11, 23, 47, 89, 173, 347, 691, 1367, 2741, 5471, 10_937, 19_841/*16_411/*21_851*/, 40_241/*32_771/*43_711*/, 84_463/*65_537/*87_383*/, /*131_101*/174_767,
+		private static readonly int[] slotsSizeArray = { 11, 23, 47, 89, 173, 347, 691, 1367, 2741, 5471, 10_937, 19_841/*16_411/*21_851*/, 40_241/*32_771/*43_711*/, 84_463/*65_537/*87_383*/, /*131_101*/174_767,
 			/*262_147*/349_529, 699_053, 1_398_107, 2_796_221, 5_592_407, 11_184_829, 22_369_661, 44_739_259, 89_478_503, 17_8956_983, 35_7913_951, 715_827_947, 143_1655_777, LargestPrimeLessThanMaxInt};
 			
-			//3, 7, 17, 37, 89, 197, 431
-        //public static readonly int[] primes = {
-        //    3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
-        //    1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
-        //    17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
-        //    187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
-        //    1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369 };
-
-//19_139	
-//39_241
-//81_463
-//19_841
-//40_241
-//84_463
-
-		// these are primes above the .75 loadfactor of the power of 2
-		//private static readonly int[] indexArraySizeArray = { 7, 17, 47, 89, 173, 347, 691, 1367, 2741, 5471, 10_937, 21_851, 43_711, 87_383, 174_767,
-		//	349_529, 699_053, 1_398_107, 2_796_221, 5_592_407, 11_184_829, 22_369_661, 44_739_259, 89_478_503, 17_8956_983, 35_7913_951, 715_827_947, 143_1655_777, LargestPrimeLessThanMaxInt};
-
-		// primes above power of 2
-		//private static readonly int[] indexArraySizeArray = { 7, 17, 37, 67, 131, 257, 521, 1031, 2053, 4099, 8209, 16411, 32771, 65537, 131101, 262147, 524309, 1048583,
-		//	2097169, 4194319, 8388617, 16777259, 33554467, 67108879, 134217757, 268435459, 536870923, 1073741827, LargestPrimeLessThanMaxInt};
-
-		private int currentIndexIntoSizeArray;
+		private int currentIndexIntoSlotsSizeArray;
 
 		// when an initial capacity is selected in the constructor or later, allocate the required space for indexArray, but
 		// limit the # of used elements to optimize for cpu caches
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 1361, 87719, 701819 };
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 2_741, 21_851, 225_307 };
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 2_741, 43_711, 467_237 };
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 2_741, 52_361, 672_827 };
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 2_741, 52_361, 672_827 };
-		private static readonly int[] indexArraySizeArrayForCacheOptimization = { 3_371, 62_851, 701_819 };
-		//private static readonly int[] indexArraySizeArrayForCacheOptimization = { 1361, 87719, 701819 };
+		private static readonly int[] slotsSizeArrayForCacheOptimization = { 3_371, 62_851, 701_819 };
 
-		// are having private backing variables faster to access than properties???
-		// One argument I’ve heard for using fields over properties is that “fields are faster”, but for trivial properties that’s actually not true, as the CLR’s Just-In-Time (JIT) compiler will inline
-		// the property access and generate code that’s as efficient as accessing a field directly.
-		// But this suggests that the JIT will have to do extra work (cpu time) to do this?
+		// the indexArray can be pre-allocated to a large size, but it's not good to use that entire size for hashing because of cache locality
+		// instead do at most 3 size steps (for 3 levels of cache) before using its actual allocated size
+		private int slotsModSize;
 
 		#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 		private int incrementForEverySetModification;
@@ -97,13 +64,10 @@ namespace FastHashSet
 
 		private double loadFactor = .75; //??? maybe remove this and make it a constant
 
-		private int usedItemsLoadFactorThreshold; // maybe remove this if we always resize both arrays at the same time???
+		// resize the slots array when the count reaches this value
+		private int resizeSlotsCountThreshold;
 
-		// the indexArray can be pre-allocated to a large size, but it's not good to use that entire size for hashing because of cache locality
-		// instead do at most 3 size steps (for 3 levels of cache) before using its actual allocated size
-		private int indexArrayModSize;
-
-		private int usedItemsCount; //??? rename this to count
+		private int count;
 
 		private int nextBlankIndex;
 
@@ -113,19 +77,16 @@ namespace FastHashSet
 		private IEqualityComparer<T> comparer;
 
 		// make the indexArray size a primary number to make the mod function less predictable - use a constant array of prime numbers
-		private int[] indexArray;
+		private int[] slots;
 
-		private TNode[] nodeArray;
+		private TNode[] buckets;
 
 		#if !Exclude_No_Hash_Array_Implementation
 		// used for small sets - when the count of items is small, it is usually faster to just use an array of the items and not do hashing at all (this can also use slightly less memory)
 		// There may be some cases where the sets can be very small, but there can be very many of these sets.  This can be good for these cases.
-		private T[] initialArray;//??? call this noHashArray
-		private bool isHashing; // start out just using the itemsTable as an array without hashing??? do we need this bool - could just check if initialArray is not null? do this as a property
+		private T[] noHashArray;
+		private bool isHashing; // start out just using the itemsTable as an array without hashing??? do we need this bool - could just check if noHashArray is not null? do this as a property
 		#endif
-
-		//??? remove if not used
-		//private int nodeArraySize;
 
 		internal enum FoundType
 		{
@@ -159,12 +120,13 @@ namespace FastHashSet
 		// this is useful if the code knows something, ex. If adding dates from 1950 to 2019 in order we know if we are in 2018 that there can't be many more dates
 		// so allocating 2x the amount would be a waste, the program could (at every year of processing, set the allocation to 366 * years remaining to be processed or something like that) -
 		// this would be better than 2x if there were alot of dates (or dates and something else being the value of each item)
+		// I think there is a property called NextSizeIncrease or something, but not sure if it's used or not
 
 		// 1 - same constructor params as HashSet
 		public FastHashSet()
 		{
 			comparer = EqualityComparer<T>.Default;
-			CreateInitialArray(InitialItemsArraySize);
+			CreateNoHashArray();
 		}
 
 		// 2 - same constructor params as HashSet
@@ -178,7 +140,7 @@ namespace FastHashSet
 		public FastHashSet(IEqualityComparer<T> comparer)
 		{
 			this.comparer = comparer ?? EqualityComparer<T>.Default;
-			CreateInitialArray(InitialItemsArraySize);
+			CreateNoHashArray();
 		}
 
 		// 4 - same constructor params as HashSet
@@ -205,12 +167,12 @@ namespace FastHashSet
 		// 7th HashSet constructor has params for serialization - not sure we want to support this??? - probably should
 
 
-		public FastHashSet(IEnumerable<T> collection, bool areAllCollectionItemsDefinitelyUnique = false, int initialCapacity = -1, int initialArraySize = -1, IEqualityComparer<T> comparer = null)
+		public FastHashSet(IEnumerable<T> collection, bool areAllCollectionItemsDefinitelyUnique = false, int initialCapacity = -1, IEqualityComparer<T> comparer = null)
 		{
 			//??? what about an initialArraySize = 0 means go straight into hashing
 
 			this.comparer = comparer;
-			CreateInitialArray(initialArraySize);
+			CreateNoHashArray();
 		}
 
 		//??? this could be public if useful somehow
@@ -224,12 +186,12 @@ namespace FastHashSet
 				{
 					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-					int hashIndex = hash % indexArrayModSize;
+					int hashIndex = hash % slotsModSize;
 
-					int index = indexArray[hashIndex];
-					indexArray[hashIndex] = nextBlankIndex;
+					int index = slots[hashIndex];
+					slots[hashIndex] = nextBlankIndex;
 
-					ref TNode t = ref nodeArray[nextBlankIndex];
+					ref TNode t = ref buckets[nextBlankIndex];
 
 					t.hashOrNextIndexForBlanks = hash;
 					t.nextIndex = index;
@@ -243,10 +205,10 @@ namespace FastHashSet
 				int i = 0;
 				foreach (T item in collection)
 				{
-					initialArray[i++] = item;
+					noHashArray[i++] = item;
 				}
 			}
-			usedItemsCount = countOfItemsInCollection;
+			count = countOfItemsInCollection;
 			firstBlankAtEndIndex = nextBlankIndex;
 		}
 
@@ -257,11 +219,11 @@ namespace FastHashSet
 			{
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -271,20 +233,20 @@ namespace FastHashSet
 					index = t.nextIndex;
 				}
 
-				ref TNode tBlank = ref nodeArray[nextBlankIndex];
+				ref TNode tBlank = ref buckets[nextBlankIndex];
 
 				tBlank.hashOrNextIndexForBlanks = hash;
-				tBlank.nextIndex = indexArray[hashIndex];
+				tBlank.nextIndex = slots[hashIndex];
 				tBlank.item = item;
 
-				indexArray[hashIndex] = nextBlankIndex;
+				slots[hashIndex] = nextBlankIndex;
 
 				nextBlankIndex++;
 
 #if Cache_Optimize_Resize
-				usedItemsCount++;
+				count++;
 
-				if (usedItemsCount >= usedItemsLoadFactorThreshold)
+				if (count >= resizeSlotsCountThreshold)
 				{
 					ResizeIndexArrayForward(GetNewIndexArraySize());
 				}
@@ -318,7 +280,7 @@ namespace FastHashSet
 						// this FastHashSet is hashing and collection is a FastHashSet (with equal comparer) and it is also hashing
 
 						nextBlankIndex = 1;
-						int maxNodeIndex = fhset.nodeArray.Length - 1;
+						int maxNodeIndex = fhset.buckets.Length - 1;
 						if (fhset.firstBlankAtEndIndex <= maxNodeIndex)
 						{
 							maxNodeIndex = fhset.firstBlankAtEndIndex - 1;
@@ -326,24 +288,24 @@ namespace FastHashSet
 
 						for (int i = 1; i <= maxNodeIndex; i++)
 						{
-							ref TNode t2 = ref fhset.nodeArray[i];
+							ref TNode t2 = ref fhset.buckets[i];
 							if (t2.nextIndex != BlankNextIndexIndicator)
 							{
 								int hash = t2.hashOrNextIndexForBlanks;
-								int hashIndex = hash % indexArrayModSize;
+								int hashIndex = hash % slotsModSize;
 
-								ref TNode t = ref nodeArray[nextBlankIndex];
+								ref TNode t = ref buckets[nextBlankIndex];
 
 								t.hashOrNextIndexForBlanks = hash;
-								t.nextIndex = indexArray[hashIndex];;
+								t.nextIndex = slots[hashIndex];;
 								t.item = t2.item;
 
-								indexArray[hashIndex] = nextBlankIndex;
+								slots[hashIndex] = nextBlankIndex;
 
 								nextBlankIndex++;
 							}
 						}
-						usedItemsCount = count;
+						this.count = count;
 						firstBlankAtEndIndex = nextBlankIndex;
 					}
 					else
@@ -351,21 +313,21 @@ namespace FastHashSet
 						// this FastHashSet is hashing and collection is a FastHashSet (with equal comparer) and it is NOT hashing
 
 						nextBlankIndex = 1;
-						for (int i = 0; i < fhset.usedItemsCount; i++)
+						for (int i = 0; i < fhset.count; i++)
 						{
-							ref T item = ref initialArray[i];
+							ref T item = ref noHashArray[i];
 
 							//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 							int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-							int hashIndex = hash % indexArrayModSize;
+							int hashIndex = hash % slotsModSize;
 
-							ref TNode t = ref nodeArray[nextBlankIndex];
+							ref TNode t = ref buckets[nextBlankIndex];
 
 							t.hashOrNextIndexForBlanks = hash;
-							t.nextIndex = indexArray[hashIndex];
+							t.nextIndex = slots[hashIndex];
 							t.item = item;
 
-							indexArray[hashIndex] = nextBlankIndex;
+							slots[hashIndex] = nextBlankIndex;
 
 							nextBlankIndex++;
 						}
@@ -418,7 +380,7 @@ namespace FastHashSet
 					}
 					else
 					{
-						CreateInitialArray(InitialItemsArraySize);
+						CreateNoHashArray();
 
 						foreach (T item in collection)
 						{
@@ -432,14 +394,14 @@ namespace FastHashSet
 
 		private void SetInitialCapacity(int capacity)
 		{
-			if (capacity > InitialItemsArraySize)
+			if (capacity > NoHashArraySize)
 			{
 				// skip using the array and go right into hashing
 				InitHashing(capacity);
 			}
 			else
 			{
-				CreateInitialArray(capacity);
+				CreateNoHashArray(); // don't set the capacity/size of the noHashArray
 			}
 		}
 
@@ -449,29 +411,29 @@ namespace FastHashSet
 		{
 			InitHashing(capacityIncrease);
 
-			if (initialArray != null)
+			if (noHashArray != null)
 			{
 				// i is the index into initialArray
-				for (int i = 0; i < usedItemsCount; i++)
+				for (int i = 0; i < count; i++)
 				{
-					ref T item = ref initialArray[i];
+					ref T item = ref noHashArray[i];
 
 					//??? if item is a value type, won't comparing to null cause boxing? - or is the jit compiler smart enough to not do that?
 					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-					int hashIndex = hash % indexArrayModSize;
+					int hashIndex = hash % slotsModSize;
 
-					ref TNode t = ref nodeArray[nextBlankIndex];
+					ref TNode t = ref buckets[nextBlankIndex];
 
 					t.hashOrNextIndexForBlanks = hash;
-					t.nextIndex = indexArray[hashIndex];
+					t.nextIndex = slots[hashIndex];
 					t.item = item;
 
-					indexArray[hashIndex] = nextBlankIndex;
+					slots[hashIndex] = nextBlankIndex;
 
 					nextBlankIndex++;
 				}
-				initialArray = null; // this array can now be garbage collected because it is no longer referenced
+				noHashArray = null; // this array can now be garbage collected because it is no longer referenced
 			}
 
 			firstBlankAtEndIndex = nextBlankIndex;
@@ -488,12 +450,12 @@ namespace FastHashSet
 			{
 				newNodeArraySize = InitialNodeArraySize;
 
-				newIndexArraySize = indexArraySizeArray[0];
+				newIndexArraySize = slotsSizeArray[0];
 				if (newIndexArraySize < newNodeArraySize)
 				{
-					for (currentIndexIntoSizeArray = 1; currentIndexIntoSizeArray < indexArraySizeArray.Length; currentIndexIntoSizeArray++)
+					for (currentIndexIntoSlotsSizeArray = 1; currentIndexIntoSlotsSizeArray < slotsSizeArray.Length; currentIndexIntoSlotsSizeArray++)
 					{
-						newIndexArraySize = indexArraySizeArray[currentIndexIntoSizeArray];
+						newIndexArraySize = slotsSizeArray[currentIndexIntoSlotsSizeArray];
 						if (newIndexArraySize >= newNodeArraySize)
 						{
 							break;
@@ -509,9 +471,9 @@ namespace FastHashSet
 				newIndexArraySize = GetEqualOrClosestHigherPrime((int)(newNodeArraySize / loadFactor));
 
 				#if Cache_Optimize_Resize
-				if (newIndexArraySize > indexArraySizeArrayForCacheOptimization[0])
+				if (newIndexArraySize > slotsSizeArrayForCacheOptimization[0])
 				{
-					newIndexArrayModSize = indexArraySizeArrayForCacheOptimization[0];
+					newIndexArrayModSize = slotsSizeArrayForCacheOptimization[0];
 					setThresh = true;
 				}
 				else
@@ -528,13 +490,13 @@ namespace FastHashSet
 				//throw new OutOfMemoryException();
 			}
 
-			nodeArray = new TNode[newNodeArraySize]; // the nodeArray has an extra item as it's first item (0 index) that is for available items - the memory is wasted, but it simplifies things
-			indexArray = new int[newIndexArraySize]; // these will be initially set to 0, so make 0 the blank(available) value and reduce all indices by one to get to the actual index into the nodeArray
-			indexArrayModSize = newIndexArrayModSize;
+			buckets = new TNode[newNodeArraySize]; // the nodeArray has an extra item as it's first item (0 index) that is for available items - the memory is wasted, but it simplifies things
+			slots = new int[newIndexArraySize]; // these will be initially set to 0, so make 0 the blank(available) value and reduce all indices by one to get to the actual index into the nodeArray
+			slotsModSize = newIndexArrayModSize;
 
 			if (setThresh)
 			{
-				usedItemsLoadFactorThreshold = (int)(newIndexArrayModSize * loadFactor);
+				resizeSlotsCountThreshold = (int)(newIndexArrayModSize * loadFactor);
 			}
 			else
 			{
@@ -548,29 +510,23 @@ namespace FastHashSet
 			isHashing = true;
 		}
 		
-		private void CreateInitialArray(int initialArraySize)
+		private void CreateNoHashArray()
 		{
-			if (initialArraySize < 0)
-			{
-				initialArraySize = InitialItemsArraySize;
-			}
-
-			initialArray = new T[initialArraySize];
-			//isHashing = false;
+			noHashArray = new T[NoHashArraySize];
 		}
 
 		private void CalcUsedItemsLoadFactorThreshold()
 		{
-			if (indexArray != null)
+			if (slots != null)
 			{
-				if (indexArray.Length == indexArrayModSize)
+				if (slots.Length == slotsModSize)
 				{
-					usedItemsLoadFactorThreshold = nodeArray.Length; // with this value, the indexArray should always resize after the nodeArray (in the same public function call)
+					resizeSlotsCountThreshold = buckets.Length; // with this value, the indexArray should always resize after the nodeArray (in the same public function call)
 				}
 				else
 				{
 					// when indexArray.Length > indexArrayModSize, this means we want to more slowly increase the indexArrayModSize to keep things in the L1-3 caches
-					usedItemsLoadFactorThreshold = (int)(indexArrayModSize * loadFactor);
+					resizeSlotsCountThreshold = (int)(slotsModSize * loadFactor);
 				}
 			}
 		}
@@ -584,12 +540,12 @@ namespace FastHashSet
 		// this implements ICollection<T>.CopyTo(T[], Int32)
 		public void CopyTo(T[] array, int arrayIndex)
 		{
-			CopyTo(array, arrayIndex, usedItemsCount);
+			CopyTo(array, arrayIndex, count);
 		}
 
 		public void CopyTo(T[] array)
 		{
-			CopyTo(array, 0, usedItemsCount);
+			CopyTo(array, 0, count);
 		}
 
 		// not really sure how this can be useful because you never know exactly what elements you will get copied (unless you copy them all)
@@ -626,7 +582,7 @@ namespace FastHashSet
 
 			if (isHashing)
 			{
-				int pastNodeIndex = nodeArray.Length;
+				int pastNodeIndex = buckets.Length;
 				if (firstBlankAtEndIndex < pastNodeIndex)
 				{
 					pastNodeIndex = firstBlankAtEndIndex;
@@ -635,9 +591,9 @@ namespace FastHashSet
 				int cnt = 0;
 				for (int i = 1; i < pastNodeIndex; i++)
 				{
-					if (nodeArray[i].nextIndex != BlankNextIndexIndicator)
+					if (buckets[i].nextIndex != BlankNextIndexIndicator)
 					{
-						array[arrayIndex++] = nodeArray[i].item;
+						array[arrayIndex++] = buckets[i].item;
 						if (++cnt == count)
 						{
 							break;
@@ -647,7 +603,7 @@ namespace FastHashSet
 			}
 			else
 			{
-				int cnt = usedItemsCount;
+				int cnt = this.count;
 				if (cnt > count)
 				{
 					cnt = count;
@@ -658,7 +614,7 @@ namespace FastHashSet
 
 				for (int i = 0; i < cnt; i++)
 				{
-					array[arrayIndex++] = initialArray[i];
+					array[arrayIndex++] = noHashArray[i];
 				}
 			}
 		}
@@ -678,7 +634,7 @@ namespace FastHashSet
 		{
 			get
 			{
-				return usedItemsCount;
+				return count;
 			}
 		}
 
@@ -719,11 +675,11 @@ namespace FastHashSet
 				int excessCapacity;
 				if (isHashing)
 				{
-					excessCapacity = nodeArray.Length - firstBlankAtEndIndex;
+					excessCapacity = buckets.Length - firstBlankAtEndIndex;
 				}
 				else
 				{
-					excessCapacity = initialArray.Length - usedItemsCount;
+					excessCapacity = noHashArray.Length - count;
 				}
 				return excessCapacity;
 			}
@@ -735,11 +691,11 @@ namespace FastHashSet
 			{
 				if (isHashing)
 				{
-					return nodeArray.Length - 1; // subtract 1 for blank node at 0 index
+					return buckets.Length - 1; // subtract 1 for blank node at 0 index
 				}
 				else
 				{
-					return initialArray.Length;
+					return noHashArray.Length;
 				}
 			}
 		}
@@ -782,11 +738,11 @@ namespace FastHashSet
 
 			if (isHashing)
 			{
-				currentCapacity = nodeArray.Length - usedItemsCount;
+				currentCapacity = buckets.Length - count;
 			}
 			else
 			{
-				currentCapacity = initialArray.Length - usedItemsCount;
+				currentCapacity = noHashArray.Length - count;
 			}
 
 			if (currentCapacity < capacity)
@@ -795,7 +751,7 @@ namespace FastHashSet
 			}
 
 			//??? is this correct - this should be the number where the next lowest number would force a resize of indexArray with the current loadfactor and the entire nodeArray is full
-			int calcedNewIndexArraySize = (int)(nodeArray.Length / loadFactor) + 1;
+			int calcedNewIndexArraySize = (int)(buckets.Length / loadFactor) + 1;
 
 			if (calcedNewIndexArraySize < 0 && calcedNewIndexArraySize > LargestPrimeLessThanMaxInt)
 			{
@@ -806,60 +762,60 @@ namespace FastHashSet
 				calcedNewIndexArraySize = GetEqualOrClosestHigherPrime(calcedNewIndexArraySize);
 			}
 
-			if (indexArray.Length < calcedNewIndexArraySize)
+			if (slots.Length < calcedNewIndexArraySize)
 			{
 				// -1 means stop trying to increase the size based on the array of primes
 				// instead calc based on 2 * existing length and then get the next higher prime
-				currentIndexIntoSizeArray = -1;
+				currentIndexIntoSlotsSizeArray = -1;
 
 				ResizeIndexArrayForward(calcedNewIndexArraySize);
 			}
 
-			return nodeArray.Length - usedItemsCount;
+			return buckets.Length - count;
 		}
 
 		// return true if indexArrayModSize was set, false otherwise
 		private bool CheckForModSizeIncrease()
 		{
-			if (indexArrayModSize < indexArray.Length)
+			if (slotsModSize < slots.Length)
 			{
 				// instead of array, just have 3 constants
-				int partLength = (int)(indexArray.Length * .75);
+				int partLength = (int)(slots.Length * .75);
 
-				int size0 = indexArraySizeArrayForCacheOptimization[0];
-				int size1 = indexArraySizeArrayForCacheOptimization[1];
-				if (indexArrayModSize == size0)
+				int size0 = slotsSizeArrayForCacheOptimization[0];
+				int size1 = slotsSizeArrayForCacheOptimization[1];
+				if (slotsModSize == size0)
 				{
 					if (size1 <= partLength)
 					{
-						indexArrayModSize = size1;
+						slotsModSize = size1;
 						return true;
 					}
 					else
 					{
-						indexArrayModSize = indexArray.Length;
+						slotsModSize = slots.Length;
 						return true;
 					}
 				}
 				else
 				{
-					int size2 = indexArraySizeArrayForCacheOptimization[2];
-					if (indexArrayModSize == size1)
+					int size2 = slotsSizeArrayForCacheOptimization[2];
+					if (slotsModSize == size1)
 					{
 						if (size2 <= partLength)
 						{
-							indexArrayModSize = size2;
+							slotsModSize = size2;
 							return true;
 						}
 						else
 						{
-							indexArrayModSize = indexArray.Length;
+							slotsModSize = slots.Length;
 							return true;
 						}
 					}
-					else if (indexArrayModSize == size2)
+					else if (slotsModSize == size2)
 					{
-						indexArrayModSize = indexArray.Length;
+						slotsModSize = slots.Length;
 						return true;
 					}
 				}
@@ -905,9 +861,9 @@ namespace FastHashSet
 
 		private int GetNewNodeArraySizeIncrease(out int oldArraySize, bool getOnlyDefaultSize = false)
 		{
-			if (nodeArray != null)
+			if (buckets != null)
 			{
-				oldArraySize = nodeArray.Length;
+				oldArraySize = buckets.Length;
 			}
 			else
 			{
@@ -969,22 +925,22 @@ namespace FastHashSet
 
 			int newArraySize;
 
-			if (currentIndexIntoSizeArray >= 0)
+			if (currentIndexIntoSlotsSizeArray >= 0)
 			{
-				if (currentIndexIntoSizeArray + 1 < indexArraySizeArray.Length)
+				if (currentIndexIntoSlotsSizeArray + 1 < slotsSizeArray.Length)
 				{
-					newArraySize = indexArraySizeArray[currentIndexIntoSizeArray + 1];
+					newArraySize = slotsSizeArray[currentIndexIntoSlotsSizeArray + 1];
 				}
 				else
 				{
-					newArraySize = indexArray.Length;
+					newArraySize = slots.Length;
 				}
 			}
 			else
 			{
 				// -1 means stop trying to increase the size based on the array of primes
 				// instead calc based on 2 * existing length and then get the next higher prime
-				newArraySize = indexArray.Length;
+				newArraySize = slots.Length;
 				if (newArraySize < int.MaxValue / 2)
 				{
 					newArraySize = GetEqualOrClosestHigherPrime(newArraySize + newArraySize);
@@ -1018,7 +974,7 @@ namespace FastHashSet
 				else
 				{
 					newNodeArraySizeIncrease = capacityIncrease;
-					oldNodeArraySize = nodeArray.Length;
+					oldNodeArraySize = buckets.Length;
 				}
 
 				if (newNodeArraySizeIncrease <= 0)
@@ -1030,8 +986,8 @@ namespace FastHashSet
 
 				//#if false
 				TNode[] newNodeArray = new TNode[newNodeArraySize];
-				Array.Copy(nodeArray, 0, newNodeArray, 0, nodeArray.Length); // check the IL, I think Array.Resize and Array.Copy without the start param calls this, so avoid the overhead by calling directly
-				nodeArray = newNodeArray;
+				Array.Copy(buckets, 0, newNodeArray, 0, buckets.Length); // check the IL, I think Array.Resize and Array.Copy without the start param calls this, so avoid the overhead by calling directly
+				buckets = newNodeArray;
 				//#endif
 				//Array.Resize(ref nodeArray, newNodeArraySize);
 
@@ -1059,7 +1015,7 @@ namespace FastHashSet
 				else
 				{
 					newNodeArraySizeIncrease = capacityIncrease;
-					oldNodeArraySize = nodeArray.Length;
+					oldNodeArraySize = buckets.Length;
 				}
 
 				if (newNodeArraySizeIncrease <= 0)
@@ -1086,7 +1042,7 @@ namespace FastHashSet
 
 		private void ResizeIndexArrayForward(int newIndexArraySize)
 		{
-			if (newIndexArraySize == indexArray.Length)
+			if (newIndexArraySize == slots.Length)
 			{
 				// this will still work if no increase in size - it just might be slower than if you could increase the indexArray size
 			}
@@ -1098,41 +1054,41 @@ namespace FastHashSet
 
 				if (!CheckForModSizeIncrease()) //??? clean this up, it isn't really good to do it this way - no need to call GetNewIndexArraySize before calling this function
 				{
-					indexArray = new int[newIndexArraySize];
-					indexArrayModSize = newIndexArraySize;
+					slots = new int[newIndexArraySize];
+					slotsModSize = newIndexArraySize;
 
-					if (currentIndexIntoSizeArray >= 0)
+					if (currentIndexIntoSlotsSizeArray >= 0)
 					{
-						currentIndexIntoSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
+						currentIndexIntoSlotsSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
 					}
 				}
 				else
 				{
-					Array.Clear(indexArray, 0, indexArrayModSize);
+					Array.Clear(slots, 0, slotsModSize);
 				}
 
 				CalcUsedItemsLoadFactorThreshold();
 
-				int indexArrayLength = indexArray.Length;
+				int indexArrayLength = slots.Length;
 
-				int pastNodeIndex = nodeArray.Length;
+				int pastNodeIndex = buckets.Length;
 				if (firstBlankAtEndIndex < pastNodeIndex)
 				{
 					pastNodeIndex = firstBlankAtEndIndex;
 				}
 
 				//??? for a loop where the end is array.Length, the compiler can skip any array bounds checking - can it do it for this code - it should be able to because pastIndex is no more than indexArray.Length
-				if (firstBlankAtEndIndex == usedItemsCount + 1)
+				if (firstBlankAtEndIndex == count + 1)
 				{
 					// this means there aren't any blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 
 						int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-						t.nextIndex = indexArray[hashIndex];
+						t.nextIndex = slots[hashIndex];
 
-						indexArray[hashIndex] = i;
+						slots[hashIndex] = i;
 					}
 				}
 				else
@@ -1140,13 +1096,13 @@ namespace FastHashSet
 					// this means there are some blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						if (t.nextIndex != BlankNextIndexIndicator) // skip blank nodes
 						{
 							int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-							t.nextIndex = indexArray[hashIndex];
+							t.nextIndex = slots[hashIndex];
 
-							indexArray[hashIndex] = i;
+							slots[hashIndex] = i;
 						}
 					}
 				}
@@ -1155,7 +1111,7 @@ namespace FastHashSet
 
 		private void ResizeIndexArrayForwardKeepMarks(int newIndexArraySize)
 		{
-			if (newIndexArraySize == indexArray.Length)
+			if (newIndexArraySize == slots.Length)
 			{
 				// this will still work if no increase in size - it just might be slower than if you could increase the indexArray size
 			}
@@ -1167,37 +1123,37 @@ namespace FastHashSet
 
 				if (!CheckForModSizeIncrease()) //??? clean this up, it isn't really good to do it this way - no need to call GetNewIndexArraySize before calling this function
 				{
-					indexArray = new int[newIndexArraySize];
-					indexArrayModSize = newIndexArraySize;
+					slots = new int[newIndexArraySize];
+					slotsModSize = newIndexArraySize;
 
-					if (currentIndexIntoSizeArray >= 0)
+					if (currentIndexIntoSlotsSizeArray >= 0)
 					{
-						currentIndexIntoSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
+						currentIndexIntoSlotsSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
 					}
 				}
 
 				CalcUsedItemsLoadFactorThreshold();
 
-				int indexArrayLength = indexArray.Length;
+				int indexArrayLength = slots.Length;
 
-				int pastNodeIndex = nodeArray.Length;
+				int pastNodeIndex = buckets.Length;
 				if (firstBlankAtEndIndex < pastNodeIndex)
 				{
 					pastNodeIndex = firstBlankAtEndIndex;
 				}
 
 				//??? for a loop where the end is array.Length, the compiler can skip any array bounds checking - can it do it for this code - it should be able to because pastIndex is no more than indexArray.Length
-				if (firstBlankAtEndIndex == usedItemsCount + 1)
+				if (firstBlankAtEndIndex == count + 1)
 				{
 					// this means there aren't any blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 
 						int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-						t.nextIndex = indexArray[hashIndex] | (t.nextIndex & MarkNextIndexBitMask);
+						t.nextIndex = slots[hashIndex] | (t.nextIndex & MarkNextIndexBitMask);
 
-						indexArray[hashIndex] = i;
+						slots[hashIndex] = i;
 					}
 				}
 				else
@@ -1205,13 +1161,13 @@ namespace FastHashSet
 					// this means there are some blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						if (t.nextIndex != BlankNextIndexIndicator) // skip blank nodes
 						{
 							int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-							t.nextIndex = indexArray[hashIndex] | (t.nextIndex & MarkNextIndexBitMask);
+							t.nextIndex = slots[hashIndex] | (t.nextIndex & MarkNextIndexBitMask);
 
-							indexArray[hashIndex] = i;
+							slots[hashIndex] = i;
 						}
 					}
 				}
@@ -1221,7 +1177,7 @@ namespace FastHashSet
 		//??? remove if not used
 		private void ResizeIndexArrayReverse(int newIndexArraySize)
 		{
-			if (newIndexArraySize == indexArray.Length)
+			if (newIndexArraySize == slots.Length)
 			{
 				// this will still work if no increase in size - it just might be slower than if you could increase the indexArray size
 			}
@@ -1230,19 +1186,19 @@ namespace FastHashSet
 				//??? what if there is a high percent of blank/unused items in the nodeArray before the firstBlankAtEndIndex (mabye because of lots of removes)?
 				// It would probably be faster to loop through the indexArray and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
 				// this probably isn't a very likely scenario
-				indexArray = new int[newIndexArraySize];
-				indexArrayModSize = newIndexArraySize;
+				slots = new int[newIndexArraySize];
+				slotsModSize = newIndexArraySize;
 
-				if (currentIndexIntoSizeArray >= 0)
+				if (currentIndexIntoSlotsSizeArray >= 0)
 				{
-					currentIndexIntoSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
+					currentIndexIntoSlotsSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
 				}
 
 				CalcUsedItemsLoadFactorThreshold();
 
-				int indexArrayLength = indexArray.Length;
+				int indexArrayLength = slots.Length;
 
-				int lastNodeIndex = nodeArray.Length - 1;
+				int lastNodeIndex = buckets.Length - 1;
 				if (firstBlankAtEndIndex < lastNodeIndex)
 				{
 					lastNodeIndex = firstBlankAtEndIndex - 1;
@@ -1252,25 +1208,25 @@ namespace FastHashSet
 				{
 					for (int i = lastNodeIndex; i >= 1 ; i--)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 
 						int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-						t.nextIndex = indexArray[hashIndex];
+						t.nextIndex = slots[hashIndex];
 
-						indexArray[hashIndex] = i;
+						slots[hashIndex] = i;
 					}				
 				}
 				else
 				{
 					for (int i = lastNodeIndex; i >= 1 ; i--)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						if (t.nextIndex != BlankNextIndexIndicator)
 						{
 							int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-							t.nextIndex = indexArray[hashIndex];
+							t.nextIndex = slots[hashIndex];
 
-							indexArray[hashIndex] = i;
+							slots[hashIndex] = i;
 						}
 					}
 				}
@@ -1280,7 +1236,7 @@ namespace FastHashSet
 		//??? rewrite this to be correct if used
 		private void ResizeIndexArrayForwardAndCopy(int newIndexArraySize, TNode[] oldNodeArray)
 		{
-			if (newIndexArraySize == indexArray.Length)
+			if (newIndexArraySize == slots.Length)
 			{
 				// this will still work if no increase in size - it just might be slower than if you could increase the indexArray size
 			}
@@ -1289,19 +1245,19 @@ namespace FastHashSet
 				//??? what if there is a high percent of blank/unused items in the nodeArray before the firstBlankAtEndIndex (mabye because of lots of removes)?
 				// It would probably be faster to loop through the indexArray and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
 				// this probably isn't a very likely scenario
-				indexArray = new int[newIndexArraySize];
-				indexArrayModSize = newIndexArraySize;
+				slots = new int[newIndexArraySize];
+				slotsModSize = newIndexArraySize;
 
-				if (currentIndexIntoSizeArray >= 0)
+				if (currentIndexIntoSlotsSizeArray >= 0)
 				{
-					currentIndexIntoSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
+					currentIndexIntoSlotsSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
 				}
 
 				CalcUsedItemsLoadFactorThreshold();
 
-				int indexArrayLength = indexArray.Length;
+				int indexArrayLength = slots.Length;
 
-				int lastNodeIndex = nodeArray.Length - 1;
+				int lastNodeIndex = buckets.Length - 1;
 				if (firstBlankAtEndIndex < lastNodeIndex)
 				{
 					lastNodeIndex = firstBlankAtEndIndex - 1;
@@ -1311,27 +1267,27 @@ namespace FastHashSet
 				{
 					for (int i = 1; i <= lastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						t = oldNodeArray[i]; // copy node from old to new
 
-						int hashIndex = t.hashOrNextIndexForBlanks % indexArrayModSize;
+						int hashIndex = t.hashOrNextIndexForBlanks % slotsModSize;
 
-						indexArray[hashIndex] = i;
-						t.nextIndex = indexArray[hashIndex];
+						slots[hashIndex] = i;
+						t.nextIndex = slots[hashIndex];
 					}				
 				}
 				else
 				{
 					for (int i = 1; i <= lastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						t = oldNodeArray[i]; // copy node from old to new
 						if (t.nextIndex != BlankNextIndexIndicator)
 						{
-							int hashIndex = t.hashOrNextIndexForBlanks % indexArrayModSize;
+							int hashIndex = t.hashOrNextIndexForBlanks % slotsModSize;
 
-							indexArray[hashIndex] = i;
-							t.nextIndex = indexArray[hashIndex];
+							slots[hashIndex] = i;
+							t.nextIndex = slots[hashIndex];
 						}
 					}
 				}
@@ -1341,7 +1297,7 @@ namespace FastHashSet
 		//??? why is this not used
 		private void ResizeIndexArrayWithMarks(int newIndexArraySize)
 		{
-			if (newIndexArraySize == indexArray.Length)
+			if (newIndexArraySize == slots.Length)
 			{
 				// this will still work if no increase in size - it just might be slower than if you could increase the indexArray size
 			}
@@ -1350,36 +1306,36 @@ namespace FastHashSet
 				//??? what if there is a high percent of blank/unused items in the nodeArray before the firstBlankAtEndIndex (mabye because of lots of removes)?
 				// It would probably be faster to loop through the indexArray and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
 				// this probably isn't a very likely scenario
-				indexArray = new int[newIndexArraySize];
-				indexArrayModSize = newIndexArraySize;
+				slots = new int[newIndexArraySize];
+				slotsModSize = newIndexArraySize;
 
-				if (currentIndexIntoSizeArray >= 0)
+				if (currentIndexIntoSlotsSizeArray >= 0)
 				{
-					currentIndexIntoSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
+					currentIndexIntoSlotsSizeArray++; // when the newIndexArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
 				}
 
 				CalcUsedItemsLoadFactorThreshold();
 
-				int indexArrayLength = indexArray.Length; //??? look at the IL code to see if it helps to put this often used property into a local variable or not
+				int indexArrayLength = slots.Length; //??? look at the IL code to see if it helps to put this often used property into a local variable or not
 
-				int pastNodeIndex = nodeArray.Length;
+				int pastNodeIndex = buckets.Length;
 				if (firstBlankAtEndIndex < pastNodeIndex)
 				{
 					pastNodeIndex = firstBlankAtEndIndex;
 				}
 
 				//??? for a loop where the end is array.Length, the compiler can skip any array bounds checking - can it do it for this code - it should be able to because pastIndex is no more than indexArray.Length
-				if (firstBlankAtEndIndex == usedItemsCount + 1)
+				if (firstBlankAtEndIndex == count + 1)
 				{
 					// this means there aren't any blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 
 						int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-						t.nextIndex = indexArray[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
+						t.nextIndex = slots[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
 
-						indexArray[hashIndex] = i;
+						slots[hashIndex] = i;
 					}
 				}
 				else
@@ -1387,13 +1343,13 @@ namespace FastHashSet
 					// this means there are some blank nodes
 					for (int i = 1; i < pastNodeIndex; i++)
 					{
-						ref TNode t = ref nodeArray[i];
+						ref TNode t = ref buckets[i];
 						if (t.nextIndex != BlankNextIndexIndicator) // skip blank nodes
 						{
 							int hashIndex = t.hashOrNextIndexForBlanks % indexArrayLength;
-							t.nextIndex = indexArray[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
+							t.nextIndex = slots[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
 
-							indexArray[hashIndex] = i;
+							slots[hashIndex] = i;
 						}
 					}
 				}
@@ -1412,10 +1368,10 @@ namespace FastHashSet
 			{
 				firstBlankAtEndIndex = 1;
 				nextBlankIndex = 1;
-				Array.Clear(indexArray, 0, indexArray.Length);
+				Array.Clear(slots, 0, slots.Length);
 			}
 
-			usedItemsCount = 0;
+			count = 0;
 		}
 
 		//
@@ -1450,17 +1406,17 @@ namespace FastHashSet
 			if (isHashing)
 			{
 				// do we have to check for nodeArray != null??? - is this possible?
-				if (nodeArray != null && nodeArray.Length > firstBlankAtEndIndex && firstBlankAtEndIndex > 0)
+				if (buckets != null && buckets.Length > firstBlankAtEndIndex && firstBlankAtEndIndex > 0)
 				{
-					Array.Resize(ref nodeArray, firstBlankAtEndIndex);
+					Array.Resize(ref buckets, firstBlankAtEndIndex);
 					// when firstBlankAtEndIndex == nodeArray.Length, that means there are no blank at end items
 				}
 			}
 			else
 			{
-				if (initialArray != null && initialArray.Length > usedItemsCount && usedItemsCount > 0)
+				if (noHashArray != null && noHashArray.Length > count && count > 0)
 				{
-					Array.Resize(ref initialArray, usedItemsCount);
+					Array.Resize(ref noHashArray, count);
 				}
 			}
 		}
@@ -1486,11 +1442,11 @@ namespace FastHashSet
 				//int hash = item == null ? 0 : comparer.GetHashCode(item);
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -1500,17 +1456,17 @@ namespace FastHashSet
 					index = t.nextIndex;
 				}
 
-				if (nextBlankIndex >= nodeArray.Length)
+				if (nextBlankIndex >= buckets.Length)
 				{
 					// there aren't any more blank nodes to add items, so we need to increase capacity
 					IncreaseCapacity();
 					//increasedCapacity = true;
 				}
 
-				int firstIndex = indexArray[hashIndex];
-				indexArray[hashIndex] = nextBlankIndex;
+				int firstIndex = slots[hashIndex];
+				slots[hashIndex] = nextBlankIndex;
 
-				ref TNode tBlank = ref nodeArray[nextBlankIndex];
+				ref TNode tBlank = ref buckets[nextBlankIndex];
 				if (nextBlankIndex >= firstBlankAtEndIndex)
 				{
 					// the blank nodes starting at firstBlankAtEndIndex aren't chained
@@ -1526,9 +1482,9 @@ namespace FastHashSet
 				tBlank.nextIndex = firstIndex;
 				tBlank.item = item;
 
-				usedItemsCount++;
+				count++;
 
-				if (usedItemsCount >= usedItemsLoadFactorThreshold)
+				if (count >= resizeSlotsCountThreshold)
 				//if (increasedCapacity)
 				{
 					ResizeIndexArrayForward(GetNewIndexArraySize());
@@ -1539,41 +1495,41 @@ namespace FastHashSet
 			else
 			{
 				int i;
-				for (i = 0; i < usedItemsCount; i++)
+				for (i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						return false;
 					}
 				}
 
-				if (i == initialArray.Length)
+				if (i == noHashArray.Length)
 				{
 					SwitchFromArrayToHashing();
 
 					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-					int hashIndex = hash % indexArrayModSize;
+					int hashIndex = hash % slotsModSize;
 
-					ref TNode tBlank = ref nodeArray[nextBlankIndex];
+					ref TNode tBlank = ref buckets[nextBlankIndex];
 
 					tBlank.hashOrNextIndexForBlanks = hash;
-					tBlank.nextIndex = indexArray[hashIndex];
+					tBlank.nextIndex = slots[hashIndex];
 					tBlank.item = item;
 
-					indexArray[hashIndex] = nextBlankIndex;
+					slots[hashIndex] = nextBlankIndex;
 
 					nextBlankIndex = ++firstBlankAtEndIndex;
 
-					usedItemsCount++;
+					count++;
 
 					return true;
 				}
 				else
 				{
 					// add to initialArray
-					initialArray[i] = item;
-					usedItemsCount++;
+					noHashArray[i] = item;
+					count++;
 					return true;
 				}
 			}
@@ -1593,11 +1549,11 @@ namespace FastHashSet
 				//int hash = item == null ? 0 : comparer.GetHashCode(item);
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -1607,17 +1563,17 @@ namespace FastHashSet
 					index = t.nextIndex;
 				}
 
-				if (nextBlankIndex >= nodeArray.Length)
+				if (nextBlankIndex >= buckets.Length)
 				{
 					// there aren't any more blank nodes to add items, so we need to increase capacity
 					IncreaseCapacity();
 					//increasedCapacity = true;
 				}
 
-				int firstIndex = indexArray[hashIndex];
-				indexArray[hashIndex] = nextBlankIndex;
+				int firstIndex = slots[hashIndex];
+				slots[hashIndex] = nextBlankIndex;
 
-				ref TNode tBlank = ref nodeArray[nextBlankIndex];
+				ref TNode tBlank = ref buckets[nextBlankIndex];
 				if (nextBlankIndex >= firstBlankAtEndIndex)
 				{
 					// the blank nodes starting at firstBlankAtEndIndex aren't chained
@@ -1633,9 +1589,9 @@ namespace FastHashSet
 				tBlank.nextIndex = firstIndex;
 				tBlank.item = item;
 
-				usedItemsCount++;
+				count++;
 
-				if (usedItemsCount >= usedItemsLoadFactorThreshold)
+				if (count >= resizeSlotsCountThreshold)
 				//if (increasedCapacity)
 				{
 					ResizeIndexArrayForward(GetNewIndexArraySize());
@@ -1646,41 +1602,41 @@ namespace FastHashSet
 			else
 			{
 				int i;
-				for (i = 0; i < usedItemsCount; i++)
+				for (i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						return false;
 					}
 				}
 
-				if (i == initialArray.Length)
+				if (i == noHashArray.Length)
 				{
 					SwitchFromArrayToHashing();
 
 					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-					int hashIndex = hash % indexArrayModSize;
+					int hashIndex = hash % slotsModSize;
 
-					ref TNode tBlank = ref nodeArray[nextBlankIndex];
+					ref TNode tBlank = ref buckets[nextBlankIndex];
 
 					tBlank.hashOrNextIndexForBlanks = hash;
-					tBlank.nextIndex = indexArray[hashIndex];
+					tBlank.nextIndex = slots[hashIndex];
 					tBlank.item = item;
 
-					indexArray[hashIndex] = nextBlankIndex;
+					slots[hashIndex] = nextBlankIndex;
 
 					nextBlankIndex = ++firstBlankAtEndIndex;
 
-					usedItemsCount++;
+					count++;
 
 					return true;
 				}
 				else
 				{
 					// add to initialArray
-					initialArray[i] = item;
-					usedItemsCount++;
+					noHashArray[i] = item;
+					count++;
 					return true;
 				}
 			}
@@ -1693,29 +1649,29 @@ namespace FastHashSet
 
 			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
-			ref TNode tBlank = ref nodeArray[nextBlankIndex];
+			ref TNode tBlank = ref buckets[nextBlankIndex];
 
 			tBlank.hashOrNextIndexForBlanks = hash;
-			tBlank.nextIndex = indexArray[hashIndex];
+			tBlank.nextIndex = slots[hashIndex];
 			tBlank.item = item;
 
-			indexArray[hashIndex] = nextBlankIndex;
+			slots[hashIndex] = nextBlankIndex;
 
 			nextBlankIndex = ++firstBlankAtEndIndex;
 
-			usedItemsCount++;
+			count++;
 		}
 
 		// return the node index that was added, or NullIndex if item was found
 		private int AddToHashSetIfNotFound(in T item, int hash)
 		{
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
-			for (int index = indexArray[hashIndex]; index != NullIndex; )
+			for (int index = slots[hashIndex]; index != NullIndex; )
 			{
-				ref TNode t = ref nodeArray[index];
+				ref TNode t = ref buckets[index];
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
@@ -1725,21 +1681,21 @@ namespace FastHashSet
 				index = t.nextIndex;
 			}
 
-			if (nextBlankIndex >= nodeArray.Length)
+			if (nextBlankIndex >= buckets.Length)
 			{
 				// there aren't any more blank nodes to add items, so we need to increase capacity
 				IncreaseCapacity();
 				ResizeIndexArrayForward(GetNewIndexArraySize());
 
 				// fix things messed up by indexArray resize
-				hashIndex = hash % indexArrayModSize;
+				hashIndex = hash % slotsModSize;
 			}
 
-			int firstIndex = indexArray[hashIndex];
-			indexArray[hashIndex] = nextBlankIndex;
+			int firstIndex = slots[hashIndex];
+			slots[hashIndex] = nextBlankIndex;
 
 			int addedNodeIndex = nextBlankIndex;
-			ref TNode tBlank = ref nodeArray[nextBlankIndex];
+			ref TNode tBlank = ref buckets[nextBlankIndex];
 			if (nextBlankIndex >= firstBlankAtEndIndex)
 			{
 				// the blank nodes starting at firstBlankAtEndIndex aren't chained
@@ -1755,7 +1711,7 @@ namespace FastHashSet
 			tBlank.nextIndex = firstIndex;
 			tBlank.item = item;
 
-			usedItemsCount++;
+			count++;
 
 			return addedNodeIndex; // item was not found, so return the index of the added item
 		}
@@ -1763,11 +1719,11 @@ namespace FastHashSet
 		// return the node index that was added, or NullIndex if item was found
 		private int AddToHashSetIfNotFoundAndMark(in T item, int hash)
 		{
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
-			for (int index = indexArray[hashIndex]; index != NullIndex; )
+			for (int index = slots[hashIndex]; index != NullIndex; )
 			{
-				ref TNode t = ref nodeArray[index];
+				ref TNode t = ref buckets[index];
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
@@ -1777,21 +1733,21 @@ namespace FastHashSet
 				index = t.nextIndex & MarkNextIndexBitMaskInverted;;
 			}
 
-			if (nextBlankIndex >= nodeArray.Length)
+			if (nextBlankIndex >= buckets.Length)
 			{
 				// there aren't any more blank nodes to add items, so we need to increase capacity
 				IncreaseCapacity();
 				ResizeIndexArrayForwardKeepMarks(GetNewIndexArraySize());
 
 				// fix things messed up by indexArray resize
-				hashIndex = hash % indexArrayModSize;
+				hashIndex = hash % slotsModSize;
 			}
 
-			int firstIndex = indexArray[hashIndex];
-			indexArray[hashIndex] = nextBlankIndex;
+			int firstIndex = slots[hashIndex];
+			slots[hashIndex] = nextBlankIndex;
 
 			int addedNodeIndex = nextBlankIndex;
-			ref TNode tBlank = ref nodeArray[nextBlankIndex];
+			ref TNode tBlank = ref buckets[nextBlankIndex];
 			if (nextBlankIndex >= firstBlankAtEndIndex)
 			{
 				// the blank nodes starting at firstBlankAtEndIndex aren't chained
@@ -1807,7 +1763,7 @@ namespace FastHashSet
 			tBlank.nextIndex = firstIndex | MarkNextIndexBitMask;
 			tBlank.item = item;
 
-			usedItemsCount++;
+			count++;
 
 			return addedNodeIndex; // item was not found, so return the index of the added item
 		}
@@ -1819,11 +1775,11 @@ namespace FastHashSet
 			{
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -1836,9 +1792,9 @@ namespace FastHashSet
 			}
 			else
 			{
-				for (int i = 0; i < usedItemsCount; i++)
+				for (int i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						return true; // item was found, so return true
 					}
@@ -1854,11 +1810,11 @@ namespace FastHashSet
 			{
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -1871,9 +1827,9 @@ namespace FastHashSet
 			}
 			else
 			{
-				for (int i = 0; i < usedItemsCount; i++)
+				for (int i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						return true; // item was found, so return true
 					}
@@ -1907,13 +1863,13 @@ namespace FastHashSet
 			{
 				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % indexArrayModSize;
+				int hashIndex = hash % slotsModSize;
 
 				int priorIndex = NullIndex;
 
-				for (int index = indexArray[hashIndex]; index != NullIndex; )
+				for (int index = slots[hashIndex]; index != NullIndex; )
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 
 					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 					{
@@ -1921,11 +1877,11 @@ namespace FastHashSet
 
 						if (priorIndex == NullIndex)
 						{
-							indexArray[hashIndex] = t.nextIndex;
+							slots[hashIndex] = t.nextIndex;
 						}
 						else
 						{
-							nodeArray[priorIndex].nextIndex = t.nextIndex;
+							buckets[priorIndex].nextIndex = t.nextIndex;
 						}
 
 						// add node to blank chain or to the blanks at the end (if possible)
@@ -1945,7 +1901,7 @@ namespace FastHashSet
 
 						t.nextIndex = BlankNextIndexIndicator;
 
-						usedItemsCount--;
+						count--;
 
 						return true;
 					}
@@ -1958,16 +1914,16 @@ namespace FastHashSet
 			}
 			else
 			{
-				for (int i = 0; i < usedItemsCount; i++)
+				for (int i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						// remove the item by moving all remaining items to fill over this one - this is probably faster than array.copyto???
-						for (int j = i + 1; j < usedItemsCount; j++, i++)
+						for (int j = i + 1; j < count; j++, i++)
 						{
-							initialArray[i] = initialArray[j];
+							noHashArray[i] = noHashArray[j];
 						}
-						usedItemsCount--;
+						count--;
 						return true;
 					}
 				}
@@ -1989,21 +1945,21 @@ namespace FastHashSet
 				//int addedNodeIndex = AddToHashSetIfNotFound(in item, item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet));
 				int addedNodeIndex = AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet));
 				isFound = (addedNodeIndex != NullIndex);
-				return ref nodeArray[addedNodeIndex].item;
+				return ref buckets[addedNodeIndex].item;
 			}
 			else
 			{
 				int i;
-				for (i = 0; i < usedItemsCount; i++)
+				for (i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						isFound = true;
-						return ref initialArray[i];
+						return ref noHashArray[i];
 					}
 				}
 
-				if (i == initialArray.Length)
+				if (i == noHashArray.Length)
 				{
 					SwitchFromArrayToHashing();
 					return ref FindOrAdd(in item, out isFound);
@@ -2011,9 +1967,9 @@ namespace FastHashSet
 				else
 				{
 					// add to initialArray and keep isAdded true
-					initialArray[i] = item;
-					usedItemsCount++;
-					return ref initialArray[i];
+					noHashArray[i] = item;
+					count++;
+					return ref noHashArray[i];
 				}
 			}
 		}
@@ -2029,15 +1985,15 @@ namespace FastHashSet
 
 			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
 			indexArrayIndex = hashIndex;
 
 			int priorIndex = NullIndex;
 
-			for (int index = indexArray[hashIndex]; index != NullIndex; )
+			for (int index = slots[hashIndex]; index != NullIndex; )
 			{
-				ref TNode t = ref nodeArray[index];
+				ref TNode t = ref buckets[index];
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
@@ -2056,11 +2012,11 @@ namespace FastHashSet
 		// is there a way to mark this function so that it will be inlined???
 		private bool FindInNodeArray(in T item, int hash)
 		{
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
-			for (int index = indexArray[hashIndex]; index != NullIndex; )
+			for (int index = slots[hashIndex]; index != NullIndex; )
 			{
-				ref TNode t = ref nodeArray[index];
+				ref TNode t = ref buckets[index];
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
@@ -2074,9 +2030,9 @@ namespace FastHashSet
 
 		private bool FindInInitialArray(in T item)
 		{
-			for (int i = 0; i < usedItemsCount; i++)
+			for (int i = 0; i < count; i++)
 			{
-				if (comparer.Equals(item, initialArray[i]))
+				if (comparer.Equals(item, noHashArray[i]))
 				{
 					return true; // item was found, so return true
 				}
@@ -2089,7 +2045,7 @@ namespace FastHashSet
 			// must be hashing to be here
 			for (int i = 1; i <= maxNodeIndex; i++)
 			{
-				nodeArray[i].nextIndex &= MarkNextIndexBitMaskInverted;
+				buckets[i].nextIndex &= MarkNextIndexBitMaskInverted;
 			}
 		}
 
@@ -2106,14 +2062,14 @@ namespace FastHashSet
 			int nextIndex;
 			int priorIndex;
 			int lastNonBlankIndex = firstBlankAtEndIndex - 1;
-			for (int i = 0; i < indexArray.Length; i++)
+			for (int i = 0; i < slots.Length; i++)
 			{
 				priorIndex = NullIndex; // 0 means use indexArray
-				index = indexArray[i];
+				index = slots[i];
 
 				while (index != NullIndex)
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 					nextIndex = t.nextIndex;
 					bool isMarked = (nextIndex & MarkNextIndexBitMask) != 0;
 					if (isMarked)
@@ -2127,7 +2083,7 @@ namespace FastHashSet
 					{
 						// set this node to blank
 
-						usedItemsCount--;
+						count--;
 
 						// first try to set it to blank by adding it to the blank at end group
 						if (index == lastNonBlankIndex)
@@ -2152,11 +2108,11 @@ namespace FastHashSet
 
 						if (priorIndex == NullIndex)
 						{
-							indexArray[i] = nextIndex;
+							slots[i] = nextIndex;
 						}
 						else
 						{
-							nodeArray[priorIndex].nextIndex = nextIndex;
+							buckets[priorIndex].nextIndex = nextIndex;
 						}
 
 						// keep priorIndex the same because we removed the node in the chain, so the priorIndex is still the same value
@@ -2175,9 +2131,9 @@ namespace FastHashSet
 		{
 			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);;
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);;
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
-			int index = indexArray[hashIndex];
+			int index = slots[hashIndex];
 
 			if (index == NullIndex)
 			{
@@ -2191,7 +2147,7 @@ namespace FastHashSet
 				int nextIndex;
 				while (true)
 				{
-					ref TNode t = ref nodeArray[index];
+					ref TNode t = ref buckets[index];
 					nextIndex = t.nextIndex;
 
 					// check if hash codes are equal before calling Equals (which may take longer) items that are Equals must have the same hash code
@@ -2250,7 +2206,7 @@ namespace FastHashSet
 
 			//??? implement this
 
-			return ref initialArray[0];
+			return ref noHashArray[0];
 		}
 
 		// this is similar to HashSet<T>.TryGetValue, except it returns a ref to the value rather than a copy of the value found (TryGetValue uses an out parameter)
@@ -2267,22 +2223,22 @@ namespace FastHashSet
 					isFound = true;
 				}
 
-				return ref nodeArray[foundNodeIndex].item; // if not found, then return a ref to the first node item, which isn't used for anything other than this
+				return ref buckets[foundNodeIndex].item; // if not found, then return a ref to the first node item, which isn't used for anything other than this
 			}
 			else
 			{
 				int i;
-				for (i = 0; i < usedItemsCount; i++)
+				for (i = 0; i < count; i++)
 				{
-					if (comparer.Equals(item, initialArray[i]))
+					if (comparer.Equals(item, noHashArray[i]))
 					{
 						isFound = true;
-						return ref initialArray[i];
+						return ref noHashArray[i];
 					}
 				}
 
 				// if item was not found, still need to return a ref to something, so return a ref to the first item in the array
-				return ref initialArray[0];
+				return ref noHashArray[0];
 			}
 		}
 
@@ -2293,7 +2249,7 @@ namespace FastHashSet
 				FindInNodeArray(equalValue, out int foundNodeIndex, out int priorNodeIndex, out int indexArrayIndex);
 				if (foundNodeIndex > 0)
 				{
-					actualValue = nodeArray[foundNodeIndex].item;
+					actualValue = buckets[foundNodeIndex].item;
 					return true;
 				}
 
@@ -2303,11 +2259,11 @@ namespace FastHashSet
 			else
 			{
 				int i;
-				for (i = 0; i < usedItemsCount; i++)
+				for (i = 0; i < count; i++)
 				{
-					if (comparer.Equals(equalValue, initialArray[i]))
+					if (comparer.Equals(equalValue, noHashArray[i]))
 					{
-						actualValue = initialArray[i];
+						actualValue = noHashArray[i];
 						return true;
 					}
 				}
@@ -2358,16 +2314,16 @@ namespace FastHashSet
 				{
 					//??? if it's easier for the jit compiler or il compiler to remove the array bounds checking then
 					// have i < initialArray.Length and do the check for usedItemsCount within the loop with a break statment
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							goto found; // break out of inner for loop
 						}
 					}
 
 					// if here then item was not found
-					if (i == initialArray.Length)
+					if (i == noHashArray.Length)
 					{
 						SwitchFromArrayToHashing();
 						//AddToHashSetIfNotFound(in item, item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet));
@@ -2376,8 +2332,8 @@ namespace FastHashSet
 					else
 					{
 						// add to initialArray
-						initialArray[i] = item;
-						usedItemsCount++;
+						noHashArray[i] = item;
+						count++;
 					}
 
 			found:;
@@ -2444,7 +2400,7 @@ namespace FastHashSet
 					{
 						foundItemCount++;
 
-						if (foundItemCount == usedItemsCount)
+						if (foundItemCount == count)
 						{
 							break;
 						}
@@ -2470,16 +2426,16 @@ namespace FastHashSet
 				// possibly a faster implementation would be to use the method above, but keep track of original order with an int array of the size of usedItemsCount (ex. item at 0 was originally 5, and also item at 5 was originally 0)
 
 				//??? should stackalloc be used - this requires unsafe - could also use an int and bit array if <=32/64 used items - might be better than allocating an array on the heap
-				byte[] foundItemArray = new byte[usedItemsCount]; // 0 means corresponding item was not yet found, 1 means it was
+				byte[] foundItemArray = new byte[count]; // 0 means corresponding item was not yet found, 1 means it was
 
 				int i;
 
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							if (foundItemArray[i] == 0)
 							{
@@ -2491,7 +2447,7 @@ namespace FastHashSet
 					}
 
 			found:
-					if (foundItemCount == usedItemsCount)
+					if (foundItemCount == count)
 					{
 						// all items in the set were found, so there is nothing to remove - the set isn't changed
 						return;
@@ -2500,17 +2456,17 @@ namespace FastHashSet
 
 				if (foundItemCount == 0)
 				{
-					usedItemsCount = 0; // this is the equivalent of calling Clear
+					count = 0; // this is the equivalent of calling Clear
 				}
 				else
 				{
 					// remove any items that are unmarked (unfound)
 					// go backwards because this can be faster
-					for (i = usedItemsCount - 1; i >= 0 ; i--)
+					for (i = count - 1; i >= 0 ; i--)
 					{
 						if (foundItemArray[i] == 0)
 						{
-							if (i < usedItemsCount - 1)
+							if (i < count - 1)
 							{
 								// a faster method if there are multiple unfound items in a row is to find the first used item (make i go backwards until the item is used and then increment i by 1)
 								// if there aren't multiple unused in a row, then this is a bit of a waste
@@ -2529,13 +2485,13 @@ namespace FastHashSet
 								i++;
 
 								int k = i;
-								for ( ; j < usedItemsCount; j++, k++)
+								for ( ; j < count; j++, k++)
 								{
-									initialArray[k] = initialArray[j];
+									noHashArray[k] = noHashArray[j];
 								}
 							}
 
-							usedItemsCount--;
+							count--;
 						}
 					}
 				}
@@ -2564,19 +2520,19 @@ namespace FastHashSet
 			ICollection<T> collection = other as ICollection<T>;
 			if (collection != null)
 			{
-				if (usedItemsCount == 0 && collection.Count > 0)
+				if (count == 0 && collection.Count > 0)
 				{
 					return true; // by definition, an empty set is a proper subset of any non-empty collection
 				}
 
-				if (usedItemsCount >= collection.Count)
+				if (count >= collection.Count)
 				{
 					return false;
 				}
 			}
 			else
 			{
-				if (usedItemsCount == 0)
+				if (count == 0)
 				{
 					foreach (T item in other)
 					{
@@ -2615,7 +2571,7 @@ namespace FastHashSet
 						notFoundAtLeastOne = true;
 					}
 
-					if (notFoundAtLeastOne && foundItemCount == usedItemsCount)
+					if (notFoundAtLeastOne && foundItemCount == count)
 					{
 						// true means all of the items in the set were found in other and at least one item in other was not found in the set
 						break; // will return true below after unmarking
@@ -2624,12 +2580,12 @@ namespace FastHashSet
 
 				UnmarkAllNextIndexValues(maxFoundIndex);
 
-				return notFoundAtLeastOne && foundItemCount == usedItemsCount; // true if all of the items in the set were found in other and at least one item in other was not found in the set
+				return notFoundAtLeastOne && foundItemCount == count; // true if all of the items in the set were found in other and at least one item in other was not found in the set
 			}
 			else
 			{
 				// just use bool instead of byte because bool is always just 1 byte anyway - also use ulong if itemCount <= 64???
-				byte[] foundItemArray = new byte[usedItemsCount]; // 0 means corresponding item was not yet found, 1 means it was
+				byte[] foundItemArray = new byte[count]; // 0 means corresponding item was not yet found, 1 means it was
 
 				int i;
 
@@ -2637,9 +2593,9 @@ namespace FastHashSet
 				bool notFoundAtLeastOne = false;
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							if (foundItemArray[i] == 0)
 							{
@@ -2654,7 +2610,7 @@ namespace FastHashSet
 					notFoundAtLeastOne = true;
 
 			found:
-					if (notFoundAtLeastOne && foundItemCount == usedItemsCount)
+					if (notFoundAtLeastOne && foundItemCount == count)
 					{
 						// true means all of the items in the set were found in other and at least one item in other was not found in the set
 						return true;
@@ -2677,7 +2633,7 @@ namespace FastHashSet
 				return true;
 			}
 
-			if (usedItemsCount == 0)
+			if (count == 0)
 			{
 				return true; // by definition, an empty set is a subset of any collection
 			}
@@ -2685,7 +2641,7 @@ namespace FastHashSet
 			ICollection<T> collection = other as ICollection<T>;
 			if (collection != null)
 			{
-				if (usedItemsCount > collection.Count)
+				if (count > collection.Count)
 				{
 					return false;
 				}
@@ -2713,7 +2669,7 @@ namespace FastHashSet
 							maxFoundIndex = foundIndex;
 						}
 
-						if (foundItemCount == usedItemsCount)
+						if (foundItemCount == count)
 						{
 							break;
 						}
@@ -2722,20 +2678,20 @@ namespace FastHashSet
 
 				UnmarkAllNextIndexValues(maxFoundIndex);
 
-				return foundItemCount == usedItemsCount; // true if all of the items in the set were found in other
+				return foundItemCount == count; // true if all of the items in the set were found in other
 			}
 			else
 			{
-				byte[] foundItemArray = new byte[usedItemsCount]; // 0 means corresponding item was not yet found, 1 means it was
+				byte[] foundItemArray = new byte[count]; // 0 means corresponding item was not yet found, 1 means it was
 
 				int i;
 
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							if (foundItemArray[i] == 0)
 							{
@@ -2747,13 +2703,13 @@ namespace FastHashSet
 					}
 
 			found:
-					if (foundItemCount == usedItemsCount)
+					if (foundItemCount == count)
 					{
 						break;
 					}
 				}
 
-				return foundItemCount == usedItemsCount; // true if all of the items in the set were found in other
+				return foundItemCount == count; // true if all of the items in the set were found in other
 			}
 		}
 		
@@ -2769,7 +2725,7 @@ namespace FastHashSet
 				return false;
 			}
 
-			if (usedItemsCount == 0)
+			if (count == 0)
 			{
 				return false; // an empty set can never be a proper superset of anything (not even an empty collection)
 			}
@@ -2816,7 +2772,7 @@ someItemsInOther:
 							maxFoundIndex = foundIndex;
 						}
 
-						if (foundItemCount == usedItemsCount)
+						if (foundItemCount == count)
 						{
 							break;
 						}
@@ -2831,20 +2787,20 @@ someItemsInOther:
 
 				UnmarkAllNextIndexValues(maxFoundIndex);
 
-				return foundItemCount < usedItemsCount; // true if all of the items in other were found in set and at least one item in set was not found in other
+				return foundItemCount < count; // true if all of the items in other were found in set and at least one item in set was not found in other
 			}
 			else
 			{
-				byte[] foundItemArray = new byte[usedItemsCount]; // 0 means corresponding item was not yet found, 1 means it was
+				byte[] foundItemArray = new byte[count]; // 0 means corresponding item was not yet found, 1 means it was
 
 				int i;
 
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							if (foundItemArray[i] == 0)
 							{
@@ -2859,13 +2815,13 @@ someItemsInOther:
 					return false;
 
 			found:
-					if (foundItemCount == usedItemsCount)
+					if (foundItemCount == count)
 					{
 						break;
 					}
 				}
 
-				return foundItemCount < usedItemsCount; // true if all of the items in other were found in set and at least one item in set was not found in other
+				return foundItemCount < count; // true if all of the items in other were found in set and at least one item in set was not found in other
 			}
 		}
 
@@ -2901,7 +2857,7 @@ someItemsInOther:
 
 someItemsInOther:
 
-			if (usedItemsCount == 0)
+			if (count == 0)
 			{
 				return false; // an empty set can never be a proper superset of anything (except an empty collection - but an empty collection returns true above)
 			}
@@ -2932,9 +2888,9 @@ someItemsInOther:
 
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							goto found; // break out of inner for loop
 						}
@@ -2960,7 +2916,7 @@ someItemsInOther:
 
 			if (other == this)
 			{
-				return usedItemsCount > 0; // return false if there are no items when both sets are the same, otherwise return true when both sets are the same
+				return count > 0; // return false if there are no items when both sets are the same, otherwise return true when both sets are the same
 			}
 
 			//??? maybe could do something like:
@@ -2997,7 +2953,7 @@ someItemsInOther:
 
 			if (c != null)
 			{
-				if (c.Count < usedItemsCount)
+				if (c.Count < count)
 				{
 					return false;
 				}
@@ -3005,7 +2961,7 @@ someItemsInOther:
 				HashSet<T> hset = other as HashSet<T>;
 				if (hset != null && Equals(hset.Comparer, Comparer))
 				{
-					if (hset.Count != usedItemsCount)
+					if (hset.Count != count)
 					{
 						return false;
 					}
@@ -3023,14 +2979,14 @@ someItemsInOther:
 				FastHashSet<T> fhset = other as FastHashSet<T>;
 				if (fhset != null && Equals(fhset.Comparer, Comparer))
 				{
-					if (fhset.Count != usedItemsCount)
+					if (fhset.Count != count)
 					{
 						return false;
 					}
 
 					if (isHashing)
 					{
-						int pastNodeIndex = nodeArray.Length;
+						int pastNodeIndex = buckets.Length;
 						if (firstBlankAtEndIndex < pastNodeIndex)
 						{
 							pastNodeIndex = firstBlankAtEndIndex;
@@ -3041,9 +2997,9 @@ someItemsInOther:
 							for (int i = 1; i < pastNodeIndex; i++)
 							{
 								//??? could not do the blank check if we know there aren't any blanks - below code and in the loop in the else
-								if (nodeArray[i].nextIndex != BlankNextIndexIndicator) // skip any blank nodes
+								if (buckets[i].nextIndex != BlankNextIndexIndicator) // skip any blank nodes
 								{
-									if (!fhset.FindInNodeArray(in nodeArray[i].item, nodeArray[i].hashOrNextIndexForBlanks))
+									if (!fhset.FindInNodeArray(in buckets[i].item, buckets[i].hashOrNextIndexForBlanks))
 									{
 										return false;
 									}
@@ -3054,9 +3010,9 @@ someItemsInOther:
 						{
 							for (int i = 1; i < pastNodeIndex; i++)
 							{
-								if (nodeArray[i].nextIndex != BlankNextIndexIndicator) // skip any blank nodes
+								if (buckets[i].nextIndex != BlankNextIndexIndicator) // skip any blank nodes
 								{
-									if (!fhset.FindInInitialArray(in nodeArray[i].item))
+									if (!fhset.FindInInitialArray(in buckets[i].item))
 									{
 										return false;
 									}
@@ -3102,22 +3058,22 @@ someItemsInOther:
 
 				UnmarkAllNextIndexValues(maxFoundIndex);
 
-				return foundItemCount == usedItemsCount;
+				return foundItemCount == count;
 			}
 			else
 			{
 				// if we need to create an array for this, maybe create bitarray - it will be smaller
 				//??? maybe there could a max size of initial array of 64, then we don't need 2 sets of code - test to see how fast 64 is
-				byte[] foundItemArray = new byte[usedItemsCount]; // 0 means corresponding item was not yet found, 1 means it was
+				byte[] foundItemArray = new byte[count]; // 0 means corresponding item was not yet found, 1 means it was
 
 				int i;
 
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
 				foreach (T item in other)
 				{
-					for (i = 0; i < usedItemsCount; i++)
+					for (i = 0; i < count; i++)
 					{
-						if (comparer.Equals(item, initialArray[i]))
+						if (comparer.Equals(item, noHashArray[i]))
 						{
 							if (foundItemArray[i] == 0)
 							{
@@ -3132,7 +3088,7 @@ someItemsInOther:
 			found:;
 				}
 
-				return foundItemCount == usedItemsCount;
+				return foundItemCount == count;
 			}
 		}
 
@@ -3287,13 +3243,13 @@ someItemsInOther:
 			// calling this function assumes we are hashing
 			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-			int hashIndex = hash % indexArrayModSize;
+			int hashIndex = hash % slotsModSize;
 
 			int priorIndex = NullIndex;
 
-			for (int index = indexArray[hashIndex]; index != NullIndex; )
+			for (int index = slots[hashIndex]; index != NullIndex; )
 			{
-				ref TNode t = ref nodeArray[index];
+				ref TNode t = ref buckets[index];
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
@@ -3302,13 +3258,13 @@ someItemsInOther:
 					{
 						if (priorIndex == NullIndex)
 						{
-							indexArray[hashIndex] = t.nextIndex;
+							slots[hashIndex] = t.nextIndex;
 						}
 						else
 						{
 							// if nodeArray[priorIndex].nextIndex was marked, then keep it marked
 							// already know that t.nextIndex is not marked
-							nodeArray[priorIndex].nextIndex = t.nextIndex | (nodeArray[priorIndex].nextIndex & MarkNextIndexBitMask);
+							buckets[priorIndex].nextIndex = t.nextIndex | (buckets[priorIndex].nextIndex & MarkNextIndexBitMask);
 						}
 
 						// add node to blank chain or to the blanks at the end (if possible)
@@ -3328,7 +3284,7 @@ someItemsInOther:
 
 						t.nextIndex = BlankNextIndexIndicator;
 
-						usedItemsCount--;
+						count--;
 
 						return;
 					}
@@ -3361,13 +3317,13 @@ someItemsInOther:
 
 				int priorIndex;
 				int nextIndex;
-				for (int i = 0; i < indexArray.Length; i++)
+				for (int i = 0; i < slots.Length; i++)
 				{
 					priorIndex = NullIndex; // 0 means use indexArray
 
-					for (int index = indexArray[i]; index != NullIndex; )
+					for (int index = slots[i]; index != NullIndex; )
 					{
-						ref TNode t = ref nodeArray[index];
+						ref TNode t = ref buckets[index];
 
 						nextIndex = t.nextIndex;
 						if (match.Invoke(t.item))
@@ -3376,11 +3332,11 @@ someItemsInOther:
 
 							if (priorIndex == NullIndex)
 							{
-								indexArray[i] = nextIndex;
+								slots[i] = nextIndex;
 							}
 							else
 							{
-								nodeArray[priorIndex].nextIndex = nextIndex;
+								buckets[priorIndex].nextIndex = nextIndex;
 							}
 
 							// add node to blank chain or to the blanks at the end (if possible)
@@ -3400,7 +3356,7 @@ someItemsInOther:
 
 							t.nextIndex = BlankNextIndexIndicator;
 
-							usedItemsCount--;
+							count--;
 							removeCount++;
 						}
 
@@ -3413,23 +3369,23 @@ someItemsInOther:
 			else
 			{
 				int i;
-				for (i = usedItemsCount - 1; i >= 0 ; i--)
+				for (i = count - 1; i >= 0 ; i--)
 				{
-					if (match.Invoke(initialArray[i]))
+					if (match.Invoke(noHashArray[i]))
 					{
 						removeCount++;
 
-						if (i < usedItemsCount - 1)
+						if (i < count - 1)
 						{
 							int j = i + 1;
 							int k = i;
-							for ( ; j < usedItemsCount; j++, k++)
+							for ( ; j < count; j++, k++)
 							{
-								initialArray[k] = initialArray[j];
+								noHashArray[k] = noHashArray[j];
 							}
 						}
 
-						usedItemsCount--;
+						count--;
 					}
 				}
 			}
@@ -3470,7 +3426,7 @@ someItemsInOther:
 						int hashCode = 0;
 						if (set.isHashing)
 						{
-							int pastNodeIndex = set.nodeArray.Length;
+							int pastNodeIndex = set.buckets.Length;
 							if (set.firstBlankAtEndIndex < pastNodeIndex)
 							{
 								pastNodeIndex = set.firstBlankAtEndIndex;
@@ -3478,20 +3434,20 @@ someItemsInOther:
 
 							for (int i = 1; i < pastNodeIndex; i++)
 							{
-								if (set.nodeArray[i].nextIndex != 0) // nextIndex == 0 indicates a blank/available node
+								if (set.buckets[i].nextIndex != 0) // nextIndex == 0 indicates a blank/available node
 								{
 									// maybe do ^= instead of add? - will this produce the same thing regardless of order? - if ^= maybe we don't need unchecked
 									// sum up the individual item hash codes - this way it won't matter what order the items are in, the same resulting hash code will be produced
-									hashCode += set.nodeArray[i].hashOrNextIndexForBlanks;
+									hashCode += set.buckets[i].hashOrNextIndexForBlanks;
 								}
 							}
 						}
 						else
 						{
-							for (int i = 0; i < set.usedItemsCount; i++)
+							for (int i = 0; i < set.count; i++)
 							{
 								// sum up the individual item hash codes - this way it won't matter what order the items are in, the same resulting hash code will be produced
-								hashCode += set.initialArray[i].GetHashCode();
+								hashCode += set.noHashArray[i].GetHashCode();
 							}
 						}
 						return hashCode;
@@ -3605,7 +3561,7 @@ someItemsInOther:
 						currentIndex++;
 						if (currentIndex < set.firstBlankAtEndIndex)
 						{
-							if (set.nodeArray[currentIndex].nextIndex != BlankNextIndexIndicator)
+							if (set.buckets[currentIndex].nextIndex != BlankNextIndexIndicator)
 							{
 								return true;
 							}
@@ -3620,7 +3576,7 @@ someItemsInOther:
 				else
 				{
 					currentIndex++;
-					if (currentIndex < set.usedItemsCount)
+					if (currentIndex < set.count)
 					{
 						return true;
 					}
@@ -3671,14 +3627,14 @@ someItemsInOther:
 
 						if (currentIndex > NullIndex && currentIndex < set.firstBlankAtEndIndex)
 						{
-							return set.nodeArray[currentIndex].item;
+							return set.buckets[currentIndex].item;
 						}
 					}
 					else
 					{
-						if (currentIndex >= 0 && currentIndex < set.usedItemsCount)
+						if (currentIndex >= 0 && currentIndex < set.count)
 						{
-							return set.initialArray[currentIndex];
+							return set.noHashArray[currentIndex];
 						}
 					}
 					return default;
@@ -3696,24 +3652,24 @@ someItemsInOther:
 
 						if (currentIndex > NullIndex && currentIndex < set.firstBlankAtEndIndex)
 						{
-							return ref set.nodeArray[currentIndex].item;
+							return ref set.buckets[currentIndex].item;
 						}
 						else
 						{
 							// we can just return a ref to the 0 node's item instead of throwing an exception? - this should have a default item value
-							return ref set.nodeArray[0].item;
+							return ref set.buckets[0].item;
 						}
 					}
 					else
 					{
-						if (currentIndex >= 0 && currentIndex < set.usedItemsCount)
+						if (currentIndex >= 0 && currentIndex < set.count)
 						{
-							return ref set.initialArray[currentIndex];
+							return ref set.noHashArray[currentIndex];
 						}
 						else
 						{
 							// we can just return a ref to the 0 node's item instead of throwing an exception?
-							return ref set.initialArray[0];
+							return ref set.noHashArray[0];
 						}
 					}
 				}
@@ -3736,7 +3692,7 @@ someItemsInOther:
 					}
 					else
 					{
-						if (currentIndex >= 0 && currentIndex < set.usedItemsCount)
+						if (currentIndex >= 0 && currentIndex < set.count)
 						{
 							return true;
 						}
