@@ -27,6 +27,7 @@
     <WarningLevel>4</WarningLevel>
     <LangVersion>7.3</LangVersion>
     <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -38,12 +39,14 @@
     <WarningLevel>4</WarningLevel>
     <LangVersion>7.3</LangVersion>
     <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="BenchmarkDotNet, Version=0.11.4.0, Culture=neutral, PublicKeyToken=aa0ca2f9092cefc4, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>packages\BenchmarkDotNet.0.11.4\lib\netstandard2.0\BenchmarkDotNet.dll</HintPath>
     </Reference>
     <Reference Include="BenchmarkDotNet.Diagnostics.Windows, Version=0.11.4.0, Culture=neutral, PublicKeyToken=aa0ca2f9092cefc4, processorArchitecture=MSIL">
@@ -245,6 +248,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bench.cs" />
+    <Compile Include="BenchUtil.cs" />
+    <Compile Include="ClassAndStruct.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -258,10 +263,6 @@
     <Analyzer Include="packages\Microsoft.CodeAnalysis.Analyzers.2.6.1\analyzers\dotnet\cs\Microsoft.CodeAnalysis.CSharp.Analyzers.dll" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FastHashSet2\FastHashSet2.csproj">
-      <Project>{39880a70-5501-407c-9f67-979d29a945fe}</Project>
-      <Name>FastHashSet2</Name>
-    </ProjectReference>
     <ProjectReference Include="..\FastHashSet\FastHashSet.csproj">
       <Project>{a99bfa31-0806-4e83-82cc-c50a0a5d1b55}</Project>
       <Name>FastHashSet</Name>
