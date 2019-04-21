@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using SCG = System.Collections.Generic;
+using System.Collections.Generic;
 using Motvin.Collections;
 
 namespace HashSetBench
@@ -165,7 +164,7 @@ namespace HashSetBench
 		}
 
 		public static void PopulateCollections25_25_50PctUnique(int maxN, out int[] uniqueArray, out int[] mixedArray,
-			SCG.HashSet<int> h, FastHashSet<int> f = null, C5.HashSet<int> c5 = null, SCG.SortedSet<int> sortedSet = null, SCG.List<int> lst = null)
+			HashSet<int> h, FastHashSet<int> f = null, C5.HashSet<int> c5 = null, SortedSet<int> sortedSet = null, List<int> lst = null)
 		{
 			uniqueArray = new int[maxN];
 			mixedArray = new int[maxN];

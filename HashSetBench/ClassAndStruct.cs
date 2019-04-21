@@ -54,15 +54,15 @@ namespace HashSetBench
 			return (myInt == other.myInt && myInt2 == other.myInt2);
 		}
 
-        public static bool operator ==(SmallStruct c1, SmallStruct c2)
-        {
-            return c1.Equals(c2);
-        }
+		public static bool operator ==(SmallStruct c1, SmallStruct c2)
+		{
+			return c1.Equals(c2);
+		}
 
-        public static bool operator !=(SmallStruct c1, SmallStruct c2)
-        {
-            return !c1.Equals(c2);
-        }
+		public static bool operator !=(SmallStruct c1, SmallStruct c2)
+		{
+			return !c1.Equals(c2);
+		}
 	}
 
 	public sealed class SmallClass : IEquatable<SmallClass>
@@ -115,6 +115,105 @@ namespace HashSetBench
 			}
 
 			return (myInt == other.myInt && myInt2 == other.myInt2);
+		}
+	}
+
+	public struct SmallStructIntVal : IEquatable<SmallStructIntVal>
+	{
+		public int myInt;
+		public int refCountOrSum;
+
+		public SmallStructIntVal(int i, int refCountOrSum)
+		{
+			myInt = i;
+			this.refCountOrSum = refCountOrSum;
+		}
+
+		public override int GetHashCode()
+		{
+			return myInt;
+		}
+
+		public override bool Equals(object obj)
+		{
+			if (obj.GetType() != typeof(SmallStructIntVal))
+			{
+				return false;
+			}
+
+			return Equals((SmallStruct)obj);
+		}
+
+		public bool Equals(SmallStructIntVal other)
+		{
+			return (myInt == other.myInt);
+		}
+
+		public static bool operator ==(SmallStructIntVal c1, SmallStructIntVal c2)
+		{
+			return c1.Equals(c2);
+		}
+
+		public static bool operator !=(SmallStructIntVal c1, SmallStructIntVal c2)
+		{
+			return !c1.Equals(c2);
+		}
+	}
+
+	public sealed class SmallClassIntVal : IEquatable<SmallClassIntVal>
+	{
+		public int myInt;
+		public int refCountOrSum;
+
+		public SmallClassIntVal(int i, int refCountOrSum)
+		{
+			myInt = i;
+			this.refCountOrSum = refCountOrSum;
+		}
+
+		public override int GetHashCode()
+		{
+			return myInt;
+		}
+
+		public override bool Equals(object obj)
+		{
+			return Equals(obj as SmallClassIntVal);
+		}
+
+		public bool Equals(SmallClassIntVal other)
+		{
+			if (other == null)
+			{
+				return false;
+			}
+
+			return (myInt == other.myInt);
+		}
+	}
+
+	// this should be 8 bytes in size
+	public struct SmallStructBasic
+	{
+		public int myInt;
+		public int myInt2;
+
+		public SmallStructBasic(int i, int i2)
+		{
+			myInt = i;
+			myInt2 = i2;
+		}
+	}
+
+	public class SmallClassBasic
+	{
+		public int myInt;
+		public int myInt2;
+
+		public SmallClassBasic(int i, int i2)
+		{
+			myInt = i;
+			myInt2 = i2;
 		}
 	}
 

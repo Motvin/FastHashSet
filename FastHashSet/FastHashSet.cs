@@ -1,26 +1,30 @@
 ﻿//#define Exclude_Check_For_Set_Modifications_In_Enumerator
 //#define Exclude_Check_For_Is_Disposed_In_Enumerator
-//#define Exclude_Lazy_Initialization_Of_Internal_Arrays
 //#define Exclude_No_Hash_Array_Implementation
-#define Cache_Optimize_Resize
+//#define Exclude_Cache_Optimize_Resize
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Diagnostics;
 
-//??? Add XML comments so that summary, etc. shows in intellisense just like it does for HashSet<T>
-namespace FastHashSet
+namespace Motvin.Collections
 {
-	public partial class FastHashSet<T> : ICollection<T>, IEnumerable<T>, IEnumerable, IReadOnlyCollection<T>, ISet<T> //, ISerializable, IDeserializationCallback - ??? implement this within #define
+	// didn't implement ISerializable and IDeserializationCallback
+	// these are implemented in the .NET HashSet
+	// the 7th HashSet constructor has params for serialization -implement that if serialization is implemented
+	// also add using System.Runtime.Serialization;
+
+	public class FastHashSet<T> : ICollection<T>, IEnumerable<T>, IEnumerable, IReadOnlyCollection<T>, ISet<T>
     {
-		// this is the size of the non-hash array used for small
+		private const int MaxSlotsArraySize = int.MaxValue - 2;
+
+		// this is the size of the non-hash array used to make small counts of items faster
 		private const int InitialArraySize = 8;
 
-		// this is the # of initial nodes for the buckets array after going into hashing after using the noHashArray
-		// this is 16 + 1 for the first node (node at index 0) which doesn't get used because 0 is the NullIndex
-		private const int InitialBucketsArraySize = 17;
+		// this is the # of initial nodes for the slots array after going into hashing after using the noHashArray
+		// this is 16 + 1; the + 1 is for the first node (node at index 0) which doesn't get used because 0 is the NullIndex
+		private const int InitialSlotsArraySize = 17;
 
 		// this indicates end of chain if the nextIndex of a node has this value and also indicates no chain if a buckets array element has this value
 		private const int NullIndex = 0;
@@ -43,8 +47,6 @@ namespace FastHashSet
 		// FastHashSet doesn't allow using an item/node index as high as int.MaxValue.
 		// There are 2 reasons for this: The first is that int.MaxValue is used as a special indicator
 		private const int LargestPrimeLessThanMaxInt = 2147483629;
-
-		// what if someone wants less than double the # of items allocated next time??? - need to get a prime between 2 numbers in this list? - just let them specify the number, which maybe should be a prime
 
 		// these are primes above the .75 loadfactor of the power of 2 except from 30,000 through 80,000, where we conserve space to help with cache space
 		private static readonly int[] bucketsSizeArray = { 11, 23, 47, 89, 173, 347, 691, 1367, 2741, 5471, 10_937, 19_841/*16_411/*21_851*/, 40_241/*32_771/*43_711*/, 84_463/*65_537/*87_383*/, /*131_101*/174_767,
@@ -88,7 +90,6 @@ namespace FastHashSet
 		// used for small sets - when the count of items is small, it is usually faster to just use an array of the items and not do hashing at all (this can also use slightly less memory)
 		// There may be some cases where the sets can be very small, but there can be very many of these sets.  This can be good for these cases.
 		private T[] noHashArray;
-		private bool isHashing; // start out just using the itemsTable as an array without hashing??? do we need this bool - could just check if noHashArray is not null? do this as a property
 		#endif
 
 		internal enum FoundType
@@ -117,15 +118,9 @@ namespace FastHashSet
 			}
 		}
 
-		//???
-		// Note: instead of blindly allocating double the # of items each time
-		// have a way to specify the # of items that should be allocated next time
-		// this is useful if the code knows something, ex. If adding dates from 1950 to 2019 in order we know if we are in 2018 that there can't be many more dates
-		// so allocating 2x the amount would be a waste, the program could (at every year of processing, set the allocation to 366 * years remaining to be processed or something like that) -
-		// this would be better than 2x if there were alot of dates (or dates and something else being the value of each item)
-		// I think there is a property called NextSizeIncrease or something, but not sure if it's used or not
-
 		// 1 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet.</typeparam>
 		public FastHashSet()
 		{
 			comparer = EqualityComparer<T>.Default;
@@ -133,6 +128,9 @@ namespace FastHashSet
 		}
 
 		// 2 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet.</typeparam>
+		/// <param name="collection">The collection to initially add to the FastHashSet.</param>
 		public FastHashSet(IEnumerable<T> collection)
 		{
 			comparer = EqualityComparer<T>.Default;
@@ -140,6 +138,9 @@ namespace FastHashSet
 		}
 
 		// 3 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet.</typeparam>
+		/// <param name="comparer">The IEqualityComparer to use for determining equality of elements in the FastHashSet.</param>
 		public FastHashSet(IEqualityComparer<T> comparer)
 		{
 			this.comparer = comparer ?? EqualityComparer<T>.Default;
@@ -147,6 +148,9 @@ namespace FastHashSet
 		}
 
 		// 4 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet.</typeparam>
+		/// <param name="capacity">The initial capacity of the FastHashSet.</param>
 		public FastHashSet(int capacity)
 		{
 			comparer = EqualityComparer<T>.Default;
@@ -154,6 +158,10 @@ namespace FastHashSet
 		}
 
 		// 5 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet</typeparam>
+		/// <param name="collection">The collection to initially add to the FastHashSet.</param>
+		/// <param name="comparer">The IEqualityComparer to use for determining equality of elements in the FastHashSet.</param>
 		public FastHashSet(IEnumerable<T> collection, IEqualityComparer<T> comparer)
 		{
 			this.comparer = comparer ?? EqualityComparer<T>.Default;
@@ -161,35 +169,49 @@ namespace FastHashSet
 		}
 
 		// 6 - same constructor params as HashSet
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the set</typeparam>
+		/// <param name="capacity">The initial capacity of the FastHashSet.</param>
+		/// <param name="comparer">The IEqualityComparer to use for determining equality of elements in the FastHashSet.</param>
 		public FastHashSet(int capacity, IEqualityComparer<T> comparer)
 		{
 			this.comparer = comparer ?? EqualityComparer<T>.Default;
 			SetInitialCapacity(capacity);
 		}
 
-		// 7th HashSet constructor has params for serialization - not sure we want to support this??? - probably should
-
-
-		public FastHashSet(IEnumerable<T> collection, bool areAllCollectionItemsDefinitelyUnique, int initialCapacity, IEqualityComparer<T> comparer = null)
+		/// <summary>Initializes a new instance of the FastHashSet&lt;<typeparamref name="T"/>&gt;.</summary>
+		/// <typeparam name="T">The element type of the FastHashSet</typeparam>
+		/// <param name="collection">The collection to initially add to the FastHashSet.</param>
+		/// <param name="areAllCollectionItemsDefinitelyUnique">True if the collection items are all unique.  The collection items can be added more quickly if they are known to be unique.</param>
+		/// <param name="capacity">The initial capacity of the FastHashSet.</param>
+		/// <param name="comparer">The IEqualityComparer to use for determining equality of elements in the FastHashSet.</param>
+		public FastHashSet(IEnumerable<T> collection, bool areAllCollectionItemsDefinitelyUnique, int capacity, IEqualityComparer<T> comparer = null)
 		{
-			//??? what about an initialCapacity = 0 means go straight into hashing
+			this.comparer = comparer ?? EqualityComparer<T>.Default;
+			SetInitialCapacity(capacity);
 
-			this.comparer = comparer;
-			SetInitialCapacity(initialCapacity);
+			if (areAllCollectionItemsDefinitelyUnique)
+			{
+				//??? this and the call below must deal correctly with an initial capacity already set
+				AddInitialUniqueValuesEnumerable(collection);
+			}
+			else
+			{
+				AddInitialEnumerable(collection);
+			}
 		}
 
-		//??? this could be public if useful somehow
 		// maybe add a param to override the initial capacity???
-		private void AddInitialUniqueValuesEnumerable(IEnumerable<T> collection, int countOfItemsInCollection)
+		private void AddInitialUniqueValuesEnumerable(IEnumerable<T> collection)
 		{
+			int itemsCount = 0;
 			#if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 			#endif
 				nextBlankIndex = 1;
 				foreach (T item in collection)
 				{
-					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 					int hashIndex = hash % bucketsModSize;
 
@@ -203,19 +225,19 @@ namespace FastHashSet
 					t.item = item;
 
 					nextBlankIndex++;
+					itemsCount++;
 				}
 			#if !Exclude_No_Hash_Array_Implementation
 			}
 			else
 			{
-				int i = 0;
 				foreach (T item in collection)
 				{
-					noHashArray[i++] = item;
+					noHashArray[itemsCount++] = item;
 				}
 			}
 			#endif
-			count = countOfItemsInCollection;
+			count = itemsCount;
 			firstBlankAtEndIndex = nextBlankIndex;
 		}
 
@@ -224,7 +246,6 @@ namespace FastHashSet
 			// this assumes we are hashing
 			foreach (T item in collection)
 			{
-				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
@@ -250,7 +271,7 @@ namespace FastHashSet
 
 				nextBlankIndex++;
 
-#if Cache_Optimize_Resize
+#if !Exclude_Cache_Optimize_Resize
 				count++;
 
 				if (count >= resizeBucketsCountThreshold)
@@ -261,8 +282,8 @@ namespace FastHashSet
 			Found:;
 			}
 			firstBlankAtEndIndex = nextBlankIndex;
-#if !Cache_Optimize_Resize
-			usedItemsCount = nextBlankIndex - 1;
+#if Exclude_Cache_Optimize_Resize
+			count = nextBlankIndex - 1;
 #endif
 		}
 
@@ -281,9 +302,9 @@ namespace FastHashSet
 				SetInitialCapacity(count);
 
 #if !Exclude_No_Hash_Array_Implementation
-				if (isHashing)
+				if (IsHashing)
 				{
-					if (fhset.isHashing)
+					if (fhset.IsHashing)
 					{
 #endif
 						// this FastHashSet is hashing and collection is a FastHashSet (with equal comparer) and it is also hashing
@@ -327,7 +348,6 @@ namespace FastHashSet
 						{
 							ref T item = ref noHashArray[i];
 
-							//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 							int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 							int hashIndex = hash % bucketsModSize;
 
@@ -347,7 +367,7 @@ namespace FastHashSet
 				{
 					// this FastHashSet is not hashing
 
-					AddInitialUniqueValuesEnumerable(collection, count);
+					AddInitialUniqueValuesEnumerable(collection);
 				}
 #endif
 			}
@@ -365,7 +385,7 @@ namespace FastHashSet
 					int usedCount = hset.Count;
 					SetInitialCapacity(usedCount);
 
-					AddInitialUniqueValuesEnumerable(collection, usedCount);
+					AddInitialUniqueValuesEnumerable(collection);
 				}
 				else
 				{
@@ -374,7 +394,7 @@ namespace FastHashSet
 					{
 						SetInitialCapacity(coll.Count);
 #if !Exclude_No_Hash_Array_Implementation
-						if (isHashing)
+						if (IsHashing)
 						{
 #endif
 							// call SetInitialCapacity and then set the capacity back to get rid of the excess?
@@ -466,7 +486,7 @@ namespace FastHashSet
 			bool setThresh = false;
 			if (capacity == -1)
 			{
-				newSlotsArraySize = InitialBucketsArraySize;
+				newSlotsArraySize = InitialSlotsArraySize;
 
 				newBucketsArraySize = bucketsSizeArray[0];
 				if (newBucketsArraySize < newSlotsArraySize)
@@ -486,16 +506,16 @@ namespace FastHashSet
 			{
 				newSlotsArraySize = capacity + 1; // add 1 to accomodate blank first node (node at 0 index)
 
-				newBucketsArraySize = GetEqualOrClosestHigherPrime((int)(newSlotsArraySize / LoadFactorConst));
+				newBucketsArraySize = FastHashSetUtil.GetEqualOrClosestHigherPrime((int)(newSlotsArraySize / LoadFactorConst));
 
-				#if Cache_Optimize_Resize
+#if !Exclude_Cache_Optimize_Resize
 				if (newBucketsArraySize > bucketsSizeArrayForCacheOptimization[0])
 				{
 					newBucketsArrayModSize = bucketsSizeArrayForCacheOptimization[0];
 					setThresh = true;
 				}
 				else
-				#endif
+#endif
 				{
 					newBucketsArrayModSize = newBucketsArraySize;
 				}
@@ -504,8 +524,8 @@ namespace FastHashSet
 			if (newSlotsArraySize == 0)
 			{
 				// this is an error, the int.MaxValue has been used for capacity and we require more - throw an Exception for this
-				//??? it's not really out of memory, if running 64 bit and you have alot of virtual memory you could possibly get here and still have memory - try this with HashSet<uint> and see what it error it gives
-				//throw new OutOfMemoryException();
+				// could try this with HashSet and see what exception it throws?
+				throw new InvalidOperationException("Exceeded maximum number of items allowed for this container.");
 			}
 
 			slots = new TNode[newSlotsArraySize]; // the slots array has an extra item as it's first item (0 index) that is for available items - the memory is wasted, but it simplifies things
@@ -524,10 +544,6 @@ namespace FastHashSet
 			nextBlankIndex = 1; // start at 1 because 0 is the blank item
 
 			firstBlankAtEndIndex = nextBlankIndex;
-
-#if !Exclude_No_Hash_Array_Implementation
-			isHashing = true;
-#endif
 		}
 		
 #if !Exclude_No_Hash_Array_Implementation
@@ -553,18 +569,22 @@ namespace FastHashSet
 			}
 		}
 
-		// this is only present to implement ICollection<T> - it has no real value otherwise
+		/// <summary>True if the FastHashSet if read-only.  This is always false.  This is only present to implement ICollection<T>, it has no real value otherwise.</summary>
 		bool ICollection<T>.IsReadOnly
 		{
 			get { return false; }
 		}
 
-		// this implements ICollection<T>.CopyTo(T[], Int32)
+		/// <summary>Copies all elements of the FastHashSet&lt;<typeparamref name="T"/>&gt; into an array starting at arrayIndex.  This implements ICollection<T>.CopyTo(T[], Int32).</summary>
+		/// <param name="array">The destination array.</param>
+		/// <param name="arrayIndex">The starting array index to copy elements to.</param>
 		public void CopyTo(T[] array, int arrayIndex)
 		{
 			CopyTo(array, arrayIndex, count);
 		}
 
+		/// <summary>Copies all elements of the FastHashSet&lt;<typeparamref name="T"/>&gt; into an array starting at the first array index.</summary>
+		/// <param name="array">The destination array.</param>
 		public void CopyTo(T[] array)
 		{
 			CopyTo(array, 0, count);
@@ -572,6 +592,10 @@ namespace FastHashSet
 
 		// not really sure how this can be useful because you never know exactly what elements you will get copied (unless you copy them all)
 		// it could easily vary for different implementations or if items were added in different order or if items were added removed and then added, instead of just added 
+		/// <summary>Copies count number of elements of the FastHashSet&lt;<typeparamref name="T"/>&gt; into an array starting at arrayIndex.</summary>
+		/// <param name="array">The destination array.</param>
+		/// <param name="arrayIndex">The starting array index to copy elements to.</param>
+		/// <param name="count">The number of elements to copy.</param>
 		public void CopyTo(T[] array, int arrayIndex, int count)
 		{
 			if (array == null)
@@ -599,11 +623,8 @@ namespace FastHashSet
 				return;
 			}
 
-			//??? maybe need to throw other exceptions, like if array is null or arrayIndex outside the bounds of the array or arrayIndex + count is outside the bounds of the array
-			// also add exceptions to other functions
-
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int pastNodeIndex = slots.Length;
@@ -634,7 +655,7 @@ namespace FastHashSet
 					cnt = count;
 				}
 
-				// for small arrays, I think the for loop below will actually be faster than Array.Copy because of the overhead of that function - could test this???
+				// for small arrays, I think the for loop below will actually be faster than Array.Copy because of the overhead of that function - could test this
 				//Array.Copy(noHashArray, 0, array, arrayIndex, cnt);
 
 				for (int i = 0; i < cnt; i++)
@@ -645,17 +666,23 @@ namespace FastHashSet
 #endif
 		}
 
+		/// <summary>
+		/// Gets the IEqualityComparer used to determine equality for items of this FastHashSet.
+		/// </summary>
 		public IEqualityComparer<T> Comparer
 		{
 			get
 			{
 				// if not set, return the default - this is what HashSet does
 				// even if it is set to null explicitly, it will still return the default
-				//return (comparer == null) ? EqualityComparer<T>.Default : comparer;
+				// this behavior is implmented in the constructor
 				return comparer;
 			}
 		}
 
+		/// <summary>
+		/// >Gets the number of items in this FastHashSet.
+		/// </summary>
 		public int Count
 		{
 			get
@@ -667,6 +694,10 @@ namespace FastHashSet
 		// this is the percent of used items to all items (used + blank/available)
 		// at which point any additional added items will
 		// first resize the buckets array to the next prime to avoid too many collisions and chains becoming too large
+		/// <summary>
+		/// Gets the fraction of 'used items count' divided by 'used items plus available/blank items count'.
+		/// The buckets array is resized when adding items and this fraction is reached, so this is the minimum LoadFactor for the buckets array.
+		/// </summary>
 		public double LoadFactor
 		{
 			get
@@ -678,13 +709,16 @@ namespace FastHashSet
 		// this is the capacity that can be trimmed with TrimExcessCapacity
 		// items that were removed from the hash arrays can't be trimmed by calling TrimExcessCapacity, only the blank items at the end
 		// items that were removed from the noHashArray can be trimmed by calling TrimExcessCapacity because the items after are moved to fill the blank space
+		/// <summary>
+		/// Gets the capacity that can be trimmed with TrimExcessCapacity.
+		/// </summary>
 		public int ExcessCapacity
 		{
 			get
 			{
 				int excessCapacity;
 #if !Exclude_No_Hash_Array_Implementation
-				if (isHashing)
+				if (IsHashing)
 				{
 #endif
 					excessCapacity = slots.Length - firstBlankAtEndIndex;
@@ -699,12 +733,15 @@ namespace FastHashSet
 			}
 		}
 
+		/// <summary>
+		/// Gets the capacity of the FastHashSet, which is the number of elements that can be contained without resizing.
+		/// </summary>
 		public int Capacity
 		{
 			get
 			{
 #if !Exclude_No_Hash_Array_Implementation
-				if (isHashing)
+				if (IsHashing)
 				{
 #endif
 					return slots.Length - 1; // subtract 1 for blank node at 0 index
@@ -718,22 +755,10 @@ namespace FastHashSet
 			}
 		}
 
-		// -1 means there is no set MaxCapacity, it is only limited by memory and int.MaxValue
-		public int MaxCapacity { get; set; } = -1;
-
-		// when ExcessCapacity becomes 0 and we need to allocate for more items, this overrides the next default increase, which is usually double
-		// -1 indicates to use the default increase
-		public int NextCapacityIncreaseOverride { get; set; } = -1;
-
-		public int NextCapacityIncreaseDefault
-		{
-			get
-			{
-				return GetNewSlotsArraySizeIncrease(out int oldSlotsArraySize, true);
-			}
-		}
-
-		public int NextCapacityIncrease
+		/// <summary>
+		/// Gets the size of the next capacity increase of the FastHashSet.
+		/// </summary>
+		public int NextCapacityIncreaseSize
 		{
 			get
 			{
@@ -741,13 +766,32 @@ namespace FastHashSet
 			}
 		}
 
-		// allocate enough space (or make sure existing space is enough) for capacity # of items to be stored in the hashset without any further allocations
+		/// <summary>
+		/// Gets the count of items when the next capacity increase (resize) of the FastHashSet will happen.
+		/// </summary>
+		public int NextCapacityIncreaseAtCount
+		{
+			get
+			{
+				return resizeBucketsCountThreshold;
+			}
+		}
+
+		public bool IsHashing
+		{
+			get => noHashArray == null;
+		}
+
 		// the actual capacity at the end of this function may be more than specified
 		// (in the case when it was more before this function was called - nothing is trimmed by this function, or in the case that slighly more capacity was allocated by this function)
-		// return the actual capacity at the end of this function
+		/// <summary>
+		/// Allocate enough space (or make sure existing space is enough) for capacity number of items to be stored in the FastHashSet without any further allocations.
+		/// </summary>
+		/// <param name="capacity">The capacity to ensure.</param>
+		/// <returns>The actual capacity at the end of this function.</returns>
 		public int EnsureCapacity(int capacity)
 		{
-			//??? this function is only in .net core, so to test if this always sets modified or only sometimes test in .net core
+			// this function is only in .net core for HashSet as of 4/15/2019
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
 			#endif
@@ -755,7 +799,7 @@ namespace FastHashSet
 			int currentCapacity;
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				currentCapacity = slots.Length - count;
@@ -781,7 +825,7 @@ namespace FastHashSet
 			}
 			else
 			{
-				calcedNewBucketsArraySize = GetEqualOrClosestHigherPrime(calcedNewBucketsArraySize);
+				calcedNewBucketsArraySize = FastHashSetUtil.GetEqualOrClosestHigherPrime(calcedNewBucketsArraySize);
 			}
 
 			if (buckets.Length < calcedNewBucketsArraySize)
@@ -845,43 +889,7 @@ namespace FastHashSet
 			return false;
 		}
 
-		// make this private???
-		// return the prime number that is equal to n (if n is a prime number) or the closest prime number greather than n
-		public static int GetEqualOrClosestHigherPrime(int n)
-		{
-			if (n >= LargestPrimeLessThanMaxInt)
-			{
-				// the next prime above this number is int.MaxValue, which we don't want to return that value because some indices increment one or two ints past this number and we don't want them to overflow
-				return LargestPrimeLessThanMaxInt;
-			}
-
-			if ((n & 1) == 0)
-			{
-				n++; // make n odd
-			}
-
-			bool found;
-
-			do
-			{
-				found = true;
-
-				int sqrt = (int)Math.Sqrt(n);
-				for (int i = 3; i <= sqrt; i += 2)
-				{
-					if (n % i == 0)
-					{
-						found = false;
-						n += 2;
-						break;
-					}
-				}
-			} while (!found);
- 
-			return n;
-		}
-
-		private int GetNewSlotsArraySizeIncrease(out int oldArraySize, bool getOnlyDefaultSize = false)
+		private int GetNewSlotsArraySizeIncrease(out int oldArraySize)
 		{
 			if (slots != null)
 			{
@@ -889,48 +897,21 @@ namespace FastHashSet
 			}
 			else
 			{
-				//??? should probably start at 8 if NOT doing the initial non-hashing array - we start at 32 if doing the initial non-hashing array
-				oldArraySize = 17; // this isn't the old node array or the noHashArray, but it is the initial size we should start at - this will create a new node array of Length = 33
+				oldArraySize = InitialSlotsArraySize; // this isn't the old array size, but it is the initial size we should start at
 			}
-			//else if (noHashArray != null)
-			//{
-			//	oldArraySize = noHashArray.Length; // this isn't the old node array, but it is the old # of items that could be stored without resizing
-			//}
-			//else
-			//{
-			//	oldArraySize = InitialItemsTableSize; // this isn't the old node array or the noHashArray, but it is the initial size we should start at
-			//}
 				
 			int increaseInSize;
-			if (getOnlyDefaultSize || NextCapacityIncreaseOverride < 0)
+
+			if (oldArraySize == 1)
 			{
-				if (oldArraySize == 1)
-				{
-					increaseInSize = InitialBucketsArraySize - 1;
-				}
-				else
-				{
-					increaseInSize = oldArraySize - 1;
-				}
+				increaseInSize = InitialSlotsArraySize - 1;
 			}
 			else
 			{
-				increaseInSize = NextCapacityIncreaseOverride;
+				increaseInSize = oldArraySize - 1;
 			}
 
-			int maxIncreaseInSize;
-			if (getOnlyDefaultSize || MaxCapacity < 0)
-			{
-				maxIncreaseInSize = (int.MaxValue - 2) - oldArraySize;
-			}
-			else
-			{
-				maxIncreaseInSize = MaxCapacity - oldArraySize;
-				if (maxIncreaseInSize < 0)
-				{
-					maxIncreaseInSize = 0;
-				}
-			}
+			int maxIncreaseInSize = MaxSlotsArraySize - oldArraySize;
 
 			if (increaseInSize > maxIncreaseInSize)
 			{
@@ -942,9 +923,6 @@ namespace FastHashSet
 		// if the value returned gets used and that value is different than the current buckets.Length, then the calling code should increment currentIndexIntoSizeArray because this would now be the current
 		private int GetNewBucketsArraySize()
 		{
-			//??? to avoid to many allocations of this array, setting the initial capacity in the constructor or MaxCapacity or NextCapacityIncreaseOverride should determine
-			// where the currentIndexIntoBucketsSizeArray is pointing to and also the capacity of this buckets array (which should be a prime)		public int MaxCapacity { get; set; } = -1;
-
 			int newArraySize;
 
 			if (currentIndexIntoBucketsSizeArray >= 0)
@@ -965,7 +943,7 @@ namespace FastHashSet
 				newArraySize = buckets.Length;
 				if (newArraySize < int.MaxValue / 2)
 				{
-					newArraySize = GetEqualOrClosestHigherPrime(newArraySize + newArraySize);
+					newArraySize = FastHashSetUtil.GetEqualOrClosestHigherPrime(newArraySize + newArraySize);
 				}
 				else
 				{
@@ -985,7 +963,7 @@ namespace FastHashSet
 			// then we don't have to call GetNewSlotsArraySizeIncrease at all?
 			// could test the overhead by just replacing all of the code with 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int newSlotsArraySizeIncrease;
@@ -1003,17 +981,15 @@ namespace FastHashSet
 
 				if (newSlotsArraySizeIncrease <= 0)
 				{
-					//??? throw an error
+					throw new InvalidOperationException("Exceeded maximum number of items allowed for this container.");
 				}
 
 				int newSlotsArraySize = oldSlotsArraySize + newSlotsArraySizeIncrease;
 
-				//#if false
 				TNode[] newSlotsArray = new TNode[newSlotsArraySize];
 				Array.Copy(slots, 0, newSlotsArray, 0, slots.Length); // check the IL, I think Array.Resize and Array.Copy without the start param calls this, so avoid the overhead by calling directly
 				slots = newSlotsArray;
-				//#endif
-				//Array.Resize(ref slots, newSlotsArraySize);
+
 #if !Exclude_No_Hash_Array_Implementation
 			}
 			else
@@ -1026,7 +1002,7 @@ namespace FastHashSet
 		private TNode[] IncreaseCapacityNoCopy(int capacityIncrease = -1)
 		{
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int newSlotsrraySizeIncrease;
@@ -1044,7 +1020,7 @@ namespace FastHashSet
 
 				if (newSlotsrraySizeIncrease <= 0)
 				{
-					//??? throw an error
+					throw new InvalidOperationException("Exceeded maximum number of items allowed for this container.");
 				}
 
 				int newSlotsArraySize = oldSlotsArraySize + newSlotsrraySizeIncrease;
@@ -1069,10 +1045,6 @@ namespace FastHashSet
 			}
 			else
 			{
-				//??? what if there is a high percent of blank/unused items in the slots array before the firstBlankAtEndIndex (mabye because of lots of removes)?
-				// It would probably be faster to loop through the buckets array and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
-				// this probably isn't a very likely scenario
-
 				if (!CheckForModSizeIncrease()) //??? clean this up, it isn't really good to do it this way - no need to call GetNewBucketsArraySize before calling this function
 				{
 					buckets = new int[newBucketsArraySize];
@@ -1195,190 +1167,10 @@ namespace FastHashSet
 			}
 		}
 
-		//??? remove if not used
-		private void ResizeBucketsArrayReverse(int newBucketsArraySize)
-		{
-			if (newBucketsArraySize == buckets.Length)
-			{
-				// this will still work if no increase in size - it just might be slower than if you could increase the buckets array size
-			}
-			else
-			{
-				//??? what if there is a high percent of blank/unused items in the slots array before the firstBlankAtEndIndex (mabye because of lots of removes)?
-				// It would probably be faster to loop through the buckets array and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
-				// this probably isn't a very likely scenario
-				buckets = new int[newBucketsArraySize];
-				bucketsModSize = newBucketsArraySize;
-
-				if (currentIndexIntoBucketsSizeArray >= 0)
-				{
-					currentIndexIntoBucketsSizeArray++; // when the newBucketsArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
-				}
-
-				CalcUsedItemsLoadFactorThreshold();
-
-				int bucketsArrayLength = buckets.Length;
-
-				int lastNodeIndex = slots.Length - 1;
-				if (firstBlankAtEndIndex < lastNodeIndex)
-				{
-					lastNodeIndex = firstBlankAtEndIndex - 1;
-				}
-
-				if (nextBlankIndex >= firstBlankAtEndIndex) // we know there aren't any blanks within the nodes, so skip the if (<not blank node>) check
-				{
-					for (int i = lastNodeIndex; i >= 1 ; i--)
-					{
-						ref TNode t = ref slots[i];
-
-						int hashIndex = t.hashOrNextIndexForBlanks % bucketsArrayLength;
-						t.nextIndex = buckets[hashIndex];
-
-						buckets[hashIndex] = i;
-					}				
-				}
-				else
-				{
-					for (int i = lastNodeIndex; i >= 1 ; i--)
-					{
-						ref TNode t = ref slots[i];
-						if (t.nextIndex != BlankNextIndexIndicator)
-						{
-							int hashIndex = t.hashOrNextIndexForBlanks % bucketsArrayLength;
-							t.nextIndex = buckets[hashIndex];
-
-							buckets[hashIndex] = i;
-						}
-					}
-				}
-			}
-		}
-
-		//??? rewrite this to be correct if used
-		private void ResizeBucketsArrayForwardAndCopy(int newBucketsArraySize, TNode[] oldSlotsArray)
-		{
-			if (newBucketsArraySize == buckets.Length)
-			{
-				// this will still work if no increase in size - it just might be slower than if you could increase the buckets array size
-			}
-			else
-			{
-				//??? what if there is a high percent of blank/unused items in the slots array before the firstBlankAtEndIndex (mabye because of lots of removes)?
-				// It would probably be faster to loop through the buckets array and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
-				// this probably isn't a very likely scenario
-				buckets = new int[newBucketsArraySize];
-				bucketsModSize = newBucketsArraySize;
-
-				if (currentIndexIntoBucketsSizeArray >= 0)
-				{
-					currentIndexIntoBucketsSizeArray++; // when the newBucketsArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
-				}
-
-				CalcUsedItemsLoadFactorThreshold();
-
-				int bucketsArrayLength = buckets.Length;
-
-				int lastNodeIndex = slots.Length - 1;
-				if (firstBlankAtEndIndex < lastNodeIndex)
-				{
-					lastNodeIndex = firstBlankAtEndIndex - 1;
-				}
-
-				if (nextBlankIndex >= firstBlankAtEndIndex) // we know there aren't any blanks within the nodes, so skip the if (<not blank node>) check
-				{
-					for (int i = 1; i <= lastNodeIndex; i++)
-					{
-						ref TNode t = ref slots[i];
-						t = oldSlotsArray[i]; // copy node from old to new
-
-						int hashIndex = t.hashOrNextIndexForBlanks % bucketsModSize;
-
-						buckets[hashIndex] = i;
-						t.nextIndex = buckets[hashIndex];
-					}				
-				}
-				else
-				{
-					for (int i = 1; i <= lastNodeIndex; i++)
-					{
-						ref TNode t = ref slots[i];
-						t = oldSlotsArray[i]; // copy node from old to new
-						if (t.nextIndex != BlankNextIndexIndicator)
-						{
-							int hashIndex = t.hashOrNextIndexForBlanks % bucketsModSize;
-
-							buckets[hashIndex] = i;
-							t.nextIndex = buckets[hashIndex];
-						}
-					}
-				}
-			}
-		}
-
-		//??? why is this not used
-		private void ResizeBucketsArrayWithMarks(int newBucketsArraySize)
-		{
-			if (newBucketsArraySize == buckets.Length)
-			{
-				// this will still work if no increase in size - it just might be slower than if you could increase the buckets array size
-			}
-			else
-			{
-				//??? what if there is a high percent of blank/unused items in the slots array before the firstBlankAtEndIndex (mabye because of lots of removes)?
-				// It would probably be faster to loop through the buckets array and then do chaining to find the used nodes - one problem with this is that you would have to find blank nodes - but they would be chained
-				// this probably isn't a very likely scenario
-				buckets = new int[newBucketsArraySize];
-				bucketsModSize = newBucketsArraySize;
-
-				if (currentIndexIntoBucketsSizeArray >= 0)
-				{
-					currentIndexIntoBucketsSizeArray++; // when the newBucketsArraySize gets used in the above code, point to the next avaialble size - ??? not sure this is the best place to increment this
-				}
-
-				CalcUsedItemsLoadFactorThreshold();
-
-				int bucketsArrayLength = buckets.Length; //??? look at the IL code to see if it helps to put this often used property into a local variable or not
-
-				int pastNodeIndex = slots.Length;
-				if (firstBlankAtEndIndex < pastNodeIndex)
-				{
-					pastNodeIndex = firstBlankAtEndIndex;
-				}
-
-				//??? for a loop where the end is array.Length, the compiler can skip any array bounds checking - can it do it for this code - it should be able to because pastIndex is no more than buckets.Length
-				if (firstBlankAtEndIndex == count + 1)
-				{
-					// this means there aren't any blank nodes
-					for (int i = 1; i < pastNodeIndex; i++)
-					{
-						ref TNode t = ref slots[i];
-
-						int hashIndex = t.hashOrNextIndexForBlanks % bucketsArrayLength;
-						t.nextIndex = buckets[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
-
-						buckets[hashIndex] = i;
-					}
-				}
-				else
-				{
-					// this means there are some blank nodes
-					for (int i = 1; i < pastNodeIndex; i++)
-					{
-						ref TNode t = ref slots[i];
-						if (t.nextIndex != BlankNextIndexIndicator) // skip blank nodes
-						{
-							int hashIndex = t.hashOrNextIndexForBlanks % bucketsArrayLength;
-							t.nextIndex = buckets[hashIndex] | (t.nextIndex & MarkNextIndexBitMask); // if marked, keep the mark
-
-							buckets[hashIndex] = i;
-						}
-					}
-				}
-			}
-		}
-
-		// this removes all items, but does not do any trimming of the resulting unused memory
-		// to trim the unused memory, call TrimExcess
+		/// <summary>
+		/// Removes all items from the FastHashSet, but does not do any trimming of the resulting unused memory.
+		/// To trim the unused memory, call TrimExcess.
+		/// </summary>
 		public void Clear()
 		{
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
@@ -1386,7 +1178,7 @@ namespace FastHashSet
 			#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 #endif
 			{
 				firstBlankAtEndIndex = 1;
@@ -1397,29 +1189,12 @@ namespace FastHashSet
 			count = 0;
 		}
 
-		//
-		public void ClearAndTrimAll()
-		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
-			incrementForEverySetModification++;
-			#endif
-
-			// this would deallocate the arrays - would need to lazy allocate the arrays if allowing this
-			//??? I don't think the time to always check for the arrays would make this worth it (but HashSet does this - with branch prediction being correct most of the time I think it wouldn't add that much time) - could just set the BasicHashSet variable to null in this case and reset it with constructor when needed?
-			// maybe could just check for the noHashArray this way, because it would set isHashing to false?
-		}
-
-		//??? what about a function the cleans up blank internal nodes by rechaining used nodes to fill up the blank nodes
-		// and then the TrimeExcess can do a better job of trimming excess - add a function to do that?  call it Compact...
-		// there is a perfect structure where the first non-blank buckets array element points to index 1 in the slots array and anything that follows does so in slots array index 2, 3, etc.
-		// this way you have locality of reference when doing lookups and you also remove all internal blank nodes
-		// it would be easy to create this structure when doing a resize of the slots array, so maybe doing an Array.Resize isn't the best for the slots array, although you are usually only doing this when you have no more blank nodes, so that part of the advantage is not valid for this scenario
-
-		//??? I wonder how TrimExcess works for HashSet?
-
 		// documentation states:
 		// You can use the TrimExcess method to minimize a HashSet<T> object's memory overhead once it is known that no new elements will be added
 		// To completely clear a HashSet<T> object and release all memory referenced by it, call this method after calling the Clear method.
+		/// <summary>
+		/// Trims excess capacity to minimize the FastHashSet's memory overhead.
+		/// </summary>
 		public void TrimExcess()
 		{
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
@@ -1427,11 +1202,10 @@ namespace FastHashSet
 			#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
-				// do we have to check for slots != null??? - is this possible?
-				if (slots != null && slots.Length > firstBlankAtEndIndex && firstBlankAtEndIndex > 0)
+				if (slots.Length > firstBlankAtEndIndex && firstBlankAtEndIndex > 0)
 				{
 					Array.Resize(ref slots, firstBlankAtEndIndex);
 					// when firstBlankAtEndIndex == slots.Length, that means there are no blank at end items
@@ -1449,29 +1223,37 @@ namespace FastHashSet
 		}
 
 		// this is only present to implement ICollection<T> - it has no real value otherwise because the Add method with bool return value already does this
+		/// <summary>
+		/// Implements the ICollection&lt;T&gt; Add method.  If possible, use the FastHashSet Add method instead to avoid any slight overhead and return a bool that indicates if the item was added.
+		/// </summary>
+		/// <param name="item">The item to add.</param>
 		void ICollection<T>.Add(T item)
 		{
 			Add(in item);
 		}
 
-		//??? do we need 2 versions, one with in and one without - if we do then change this one to match the regular Add, which has been tested
+		// we need 2 versions of Add, one with 'in' and one without 'in' because the one without 'in' is needed to implement the ISet Add method
+		// always keep the code for these 2 Add methods exactly the same
+		/// <summary>
+		/// Add an item to the FastHashSet using a read-only reference (in) parameter.  Use this version of the Add method when item is a large value type to avoid copying large objects.
+		/// </summary>
+		/// <param name="item">The item to add.</param>
+		/// <returns>True if the item was added, or false if the FastHashSet already contains the item.</returns>
 		public bool Add(in T item)
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
-				//bool increasedCapacity = false;
 
-				//??? consider doing the  &  & HighBitNotSet on the comparer.GetHashCode(item); - this could mess with comparing equals (maybe -2,000,000,000 would compare equals to 1...) by just their hash codes, but this should be rare
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
-				for (int index = buckets[hashIndex]; index != NullIndex; )
+				for (int index = buckets[hashIndex]; index != NullIndex;)
 				{
 					ref TNode t = ref slots[index];
 
@@ -1561,6 +1343,11 @@ namespace FastHashSet
 #endif
 		}
 
+		/// <summary>
+		/// Add an item to the FastHashSet.
+		/// </summary>
+		/// <param name="item">The item to add.</param>
+		/// <returns>True if the item was added, or false if the FastHashSet already contains the item.</returns>
 		public bool Add(T item)
 		{
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
@@ -1568,11 +1355,10 @@ namespace FastHashSet
 			#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 
-				//??? consider doing the  &  & HighBitNotSet on the comparer.GetHashCode(item); - this could mess with comparing equals (maybe -2,000,000,000 would compare equals to 1...) by just their hash codes, but this should be rare
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
@@ -1638,7 +1424,6 @@ namespace FastHashSet
 				{
 					SwitchToHashing();
 
-					//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 					int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 					int hashIndex = hash % bucketsModSize;
 
@@ -1667,30 +1452,8 @@ namespace FastHashSet
 #endif
 		}
 
-		//??? remove if not used - this was inlined in both Add methods
-		private void AddToHashSet(in T item)
-		{
-			// this assumes we are hashing and there is enough capacity and the item is already not found and there are no chained blanks
-
-			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
-			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-			int hashIndex = hash % bucketsModSize;
-
-			ref TNode tBlank = ref slots[nextBlankIndex];
-
-			tBlank.hashOrNextIndexForBlanks = hash;
-			tBlank.nextIndex = buckets[hashIndex];
-			tBlank.item = item;
-
-			buckets[hashIndex] = nextBlankIndex;
-
-			nextBlankIndex = ++firstBlankAtEndIndex;
-
-			count++;
-		}
-
-		// return the node index that was added, or NullIndex if item was found
-		private int AddToHashSetIfNotFound(in T item, int hash)
+		// return the index in the slots array of the item that was added or found
+		private int AddToHashSetIfNotFound(in T item, int hash, out bool isFound)
 		{
 			// this assmes we are hashing
 
@@ -1702,7 +1465,8 @@ namespace FastHashSet
 
 				if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
 				{
-					return NullIndex; // item was found, so return NullIndex to indicate it was not added
+					isFound = true;
+					return index; // item was found, so return the index of the found item
 				}
 
 				index = t.nextIndex;
@@ -1740,6 +1504,7 @@ namespace FastHashSet
 
 			count++;
 
+			isFound = false;
 			return addedNodeIndex; // item was not found, so return the index of the added item
 		}
 
@@ -1797,54 +1562,62 @@ namespace FastHashSet
 			return addedNodeIndex; // item was not found, so return the index of the added item
 		}
 
-		// this implements Contains for ICollection<T>
-		public bool Contains(T item)
-		{
-#if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
-			{
-#endif
-				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
-				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
-				int hashIndex = hash % bucketsModSize;
-
-				for (int index = buckets[hashIndex]; index != NullIndex; )
-				{
-					ref TNode t = ref slots[index];
-
-					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
-					{
-						return true; // item was found, so return true
-					}
-
-					index = t.nextIndex;
-				}
-				return false;
-#if !Exclude_No_Hash_Array_Implementation
-			}
-			else
-			{
-				for (int i = 0; i < count; i++)
-				{
-					if (comparer.Equals(item, noHashArray[i]))
-					{
-						return true; // item was found, so return true
-					}
-				}
-				return false;
-			}
-#endif
-		}
-
-		// does in make a difference??? - test this with larger structs and compare against the non-in version
+		// we need 2 versions of Contains, one with 'in' and one without 'in' because the one without 'in' is needed to implement the ICollection Contains method
+		// always keep the code for these 2 Contains methods exactly the same
+		/// <summary>
+		/// Return true if the item is contained in the FastHashSet, otherwise return false.  Use this version of the Contains method when item is a large value type to avoid copying large objects.
+		/// </summary>
+		/// <param name="item">The item to search for in the FastHashSet.</param>
+		/// <returns>True if found, false if not found.</returns>
 		public bool Contains(in T item)
 		{
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
+				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
+				int hashIndex = hash % bucketsModSize;
 
-				//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
+				for (int index = buckets[hashIndex]; index != NullIndex;)
+				{
+					ref TNode t = ref slots[index];
+
+					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
+					{
+						return true; // item was found, so return true
+					}
+
+					index = t.nextIndex;
+				}
+				return false;
+#if !Exclude_No_Hash_Array_Implementation
+			}
+			else
+			{
+				for (int i = 0; i < count; i++)
+				{
+					if (comparer.Equals(item, noHashArray[i]))
+					{
+						return true; // item was found, so return true
+					}
+				}
+				return false;
+			}
+#endif
+		}
+
+		// this implements Contains for ICollection<T>
+		/// <summary>
+		/// Return true if the item is contained in the FastHashSet, otherwise return false.
+		/// </summary>
+		/// <param name="item">The item to search for in the FastHashSet.</param>
+		/// <returns>True if found, false if not found.</returns>
+		public bool Contains(T item)
+		{
+#if !Exclude_No_Hash_Array_Implementation
+			if (IsHashing)
+			{
+#endif
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
@@ -1876,21 +1649,11 @@ namespace FastHashSet
 #endif
 		}
 
-		// only remove the found item if the predicate on the found item evaluates to true
-		//??? look at HashSet<T>.RemoveWhere
-		// this can be used to remove items if their reference count = 0 - but it really isn't good to use this that way because we want to call Find, then see if the ref count goes to 0 and then remove if it does, but otherwise just decrease the ref count
-		// so maybe this should return a reference to the found item instead of bool (like the Find call does)
-		public bool RemoveIf(T item, Predicate<T> pred)
-		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
-			incrementForEverySetModification++;
-			#endif
-
-			bool isRemoved = false;
-
-			return isRemoved;
-		}
-
+		/// <summary>
+		/// Removes the item from the FastHashSet if found and returns true if the item was found and removed.
+		/// </summary>
+		/// <param name="item">The item value to remove.</param>
+		/// <returns>True if the item was removed, or false if the item was not contained in the FastHashSet.</returns>
 		public bool Remove(T item)
 		{
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
@@ -1898,7 +1661,7 @@ namespace FastHashSet
 			#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
@@ -1958,7 +1721,7 @@ namespace FastHashSet
 				{
 					if (comparer.Equals(item, noHashArray[i]))
 					{
-						// remove the item by moving all remaining items to fill over this one - this is probably faster than array.copyto???
+						// remove the item by moving all remaining items to fill over this one - this is probably faster than Array.CopyTo
 						for (int j = i + 1; j < count; j++, i++)
 						{
 							noHashArray[i] = noHashArray[j];
@@ -1972,8 +1735,125 @@ namespace FastHashSet
 #endif
 		}
 
-		//??? do we need the same FindOrAdd for a reference type? or does this function take care of that?
-		//??? don't do isAdded, do isFound because of Find below
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Removes the item from the FastHashSet if found and also if the predicate param evaluates to true on the found item.</para>
+		/// <para>This is useful if there is something about the found item other than its equality value that can be used to determine if it should be removed.</para>
+		/// </summary>
+		/// <param name="item">The item value to remove.</param>
+		/// <param name="removeIfPredIsTrue">The predicate to evaluate on the found item.</param>
+		/// <returns>True if the item was removed, or false if the item was not removed.</returns>
+		public bool RemoveIf(in T item, Predicate<T> removeIfPredIsTrue)
+		{
+			if (removeIfPredIsTrue == null)
+			{
+				throw new ArgumentNullException(nameof(removeIfPredIsTrue), "Value cannot be null.");
+			}
+
+			// the following code is almost the same as the Remove(item) function except that it additionally invokes the removeIfPredIsTrue param to see if the item should be removed
+
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+			incrementForEverySetModification++;
+#endif
+
+#if !Exclude_No_Hash_Array_Implementation
+			if (IsHashing)
+			{
+#endif
+				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
+				int hashIndex = hash % bucketsModSize;
+
+				int priorIndex = NullIndex;
+
+				for (int index = buckets[hashIndex]; index != NullIndex;)
+				{
+					ref TNode t = ref slots[index];
+
+					if (t.hashOrNextIndexForBlanks == hash && comparer.Equals(t.item, item))
+					{
+						if (removeIfPredIsTrue.Invoke(t.item))
+						{
+							// item was found and predicate was true, so remove it
+
+							if (priorIndex == NullIndex)
+							{
+								buckets[hashIndex] = t.nextIndex;
+							}
+							else
+							{
+								slots[priorIndex].nextIndex = t.nextIndex;
+							}
+
+							// add node to blank chain or to the blanks at the end (if possible)
+							if (index == firstBlankAtEndIndex - 1)
+							{
+								if (nextBlankIndex == firstBlankAtEndIndex)
+								{
+									nextBlankIndex--;
+								}
+								firstBlankAtEndIndex--;
+							}
+							else
+							{
+								t.hashOrNextIndexForBlanks = nextBlankIndex;
+								nextBlankIndex = index;
+							}
+
+							t.nextIndex = BlankNextIndexIndicator;
+
+							count--;
+
+							return true;
+						}
+						else
+						{
+							return false;
+						}
+					}
+
+					priorIndex = index;
+
+					index = t.nextIndex;
+				}
+				return false; // item not found
+#if !Exclude_No_Hash_Array_Implementation
+			}
+			else
+			{
+				for (int i = 0; i < count; i++)
+				{
+					if (comparer.Equals(item, noHashArray[i]))
+					{
+						if (removeIfPredIsTrue.Invoke(noHashArray[i]))
+						{
+							// remove the item by moving all remaining items to fill over this one - this is probably faster than Array.CopyTo
+							for (int j = i + 1; j < count; j++, i++)
+							{
+								noHashArray[i] = noHashArray[j];
+							}
+							count--;
+							return true;
+						}
+						else
+						{
+							return false;
+						}
+					}
+				}
+				return false;
+			}
+#endif
+		}
+
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Returns a ref to the element in the FastHashSet if found, or adds the item if not present in the FastHashSet and returns a ref to the added element.</para>
+		/// <para>The returned element reference should only be changed in ways that does not effect its GetHashCode value.</para>
+		/// <para>The returned element reference should only be used before any modifications to the FastHashSet (like Add or Remove) which may invalidate it.</para>
+		/// </summary>
+		/// <param name="item">The item to be added or found.</param>
+		/// <param name="isFound">Set to true if the item is found, or false if the added was not found and added.</param>
+		/// <returns>Returns a ref to the found item or to the added item.</returns>
 		public ref T FindOrAdd(in T item, out bool isFound)
 		{
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
@@ -1982,12 +1862,11 @@ namespace FastHashSet
 
 			isFound = false;
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
-				int addedNodeIndex = AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet));
-				isFound = (addedNodeIndex != NullIndex);
-				return ref slots[addedNodeIndex].item;
+				int addedOrFoundItemIndex = AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet), out isFound);
+				return ref slots[addedOrFoundItemIndex].item;
 #if !Exclude_No_Hash_Array_Implementation
 			}
 			else
@@ -2018,8 +1897,158 @@ namespace FastHashSet
 #endif
 		}
 
-		// return index into slots array or 0 if not found
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Tries to find the element with the same value as item in the FastHashSet and, if found, it returns a ref to this found element.</para>
+		/// <para>This is similar to TryGetValue except it returns a ref to the actual element rather than creating copy of the element with an out parameter.</para>
+		/// <para>This allows the actual element to be changed if it is a mutable value type.</para>
+		/// <para>The returned element reference should only be changed in ways that does not effect its GetHashCode value.</para>
+		/// <para>The returned element reference should only be used before any modifications to the FastHashSet (like Add or Remove) which may invalidate it.</para>
+		/// </summary>
+		/// <param name="item">The item to be found.</param>
+		/// <param name="isFound">Set to true if the item is found, or false if not found.</param>
+		/// <returns>Returns a ref to the element if it is found and sets the isFound out parameter to true.  If not found, it returns a ref to the first element available and sets the isFound out parameter to false.</returns>
+		public ref T Find(in T item, out bool isFound)
+		{
+			isFound = false;
+#if !Exclude_No_Hash_Array_Implementation
+			if (IsHashing)
+			{
+#endif
+				FindInSlotsArray(item, out int foundNodeIndex, out int priorNodeIndex, out int bucketsIndex);
+				if (foundNodeIndex != NullIndex)
+				{
+					isFound = true;
+				}
 
+				return ref slots[foundNodeIndex].item;
+#if !Exclude_No_Hash_Array_Implementation
+			}
+			else
+			{
+				int i;
+				for (i = 0; i < count; i++)
+				{
+					if (comparer.Equals(item, noHashArray[i]))
+					{
+						isFound = true;
+						return ref noHashArray[i];
+					}
+				}
+
+				// if item was not found, still need to return a ref to something, so return a ref to the first item in the array
+				return ref noHashArray[0];
+			}
+#endif
+		}
+
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Tries to find the element with the same value as item in the FastHashSet and, if found,it returns a ref to this found element, except if it is also removed (which is determined by the removeIfPredIsTrue parameter).</para>
+		/// <para>The returned element reference should only be changed in ways that does not effect its GetHashCode value.</para>
+		/// <para>The returned element reference should only be used before any modifications to the FastHashSet (like Add or Remove) which may invalidate it.</para>
+		/// </summary>
+		/// <param name="item"></param>
+		/// <param name="removeIfPredIsTrue">The predicate to evaluate on the found item.</param>
+		/// <param name="isFound">Set to true if the item is found, or false if not found.</param>
+		/// <param name="isRemoved">Set to true if the item is found and then removed, or false if not removed.</param>
+		/// <returns>Returns a ref to the element if it is found (and not removed) and sets the isFound out parameter to true and the isRemoved out parameter to false.  If removed, it returns a reference to the first available element.</returns>
+		public ref T FindAndRemoveIf(in T item, Predicate<T> removeIfPredIsTrue, out bool isFound, out bool isRemoved)
+		{
+			if (removeIfPredIsTrue == null)
+			{
+				throw new ArgumentNullException(nameof(removeIfPredIsTrue), "Value cannot be null.");
+			}
+
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+			incrementForEverySetModification++;
+#endif
+
+			isFound = false;
+			isRemoved = false;
+
+#if !Exclude_No_Hash_Array_Implementation
+			if (IsHashing)
+			{
+#endif
+				FindInSlotsArray(item, out int foundNodeIndex, out int priorNodeIndex, out int bucketsIndex);
+				if (foundNodeIndex != NullIndex)
+				{
+					isFound = true;
+					ref TNode t = ref slots[foundNodeIndex];
+					if (removeIfPredIsTrue.Invoke(t.item))
+					{
+						if (priorNodeIndex == NullIndex)
+						{
+							buckets[bucketsIndex] = t.nextIndex;
+						}
+						else
+						{
+							slots[priorNodeIndex].nextIndex = t.nextIndex;
+						}
+
+						// add node to blank chain or to the blanks at the end (if possible)
+						if (foundNodeIndex == firstBlankAtEndIndex - 1)
+						{
+							if (nextBlankIndex == firstBlankAtEndIndex)
+							{
+								nextBlankIndex--;
+							}
+							firstBlankAtEndIndex--;
+						}
+						else
+						{
+							t.hashOrNextIndexForBlanks = nextBlankIndex;
+							nextBlankIndex = foundNodeIndex;
+						}
+
+						t.nextIndex = BlankNextIndexIndicator;
+
+						count--;
+
+						isRemoved = true;
+
+						foundNodeIndex = NullIndex;
+					}
+				}
+
+				return ref slots[foundNodeIndex].item;
+#if !Exclude_No_Hash_Array_Implementation
+			}
+			else
+			{
+				int i;
+				for (i = 0; i < count; i++)
+				{
+					if (comparer.Equals(item, noHashArray[i]))
+					{
+						isFound = true;
+						if (removeIfPredIsTrue.Invoke(noHashArray[i]))
+						{
+							// remove the item by moving all remaining items to fill over this one - this is probably faster than Array.CopyTo
+							for (int j = i + 1; j < count; j++, i++)
+							{
+								noHashArray[i] = noHashArray[j];
+							}
+							count--;
+
+							isRemoved = true;
+							return ref noHashArray[0];
+						}
+						else
+						{
+							return ref noHashArray[i];
+						}
+					}
+				}
+
+				// if item was not found, still need to return a ref to something, so return a ref to the first item in the array
+				return ref noHashArray[0];
+			}
+#endif
+		}
+
+		// return index into slots array or 0 if not found
 		//??? to make things faster, could have a FindInSlotsArray that just returns foundNodeIndex and another version called FindWithPriorInSlotsArray that has the 3 out params
 		// first test to make sure this works as is
 		private void FindInSlotsArray(in T item, out int foundNodeIndex, out int priorNodeIndex, out int bucketsIndex)
@@ -2027,7 +2056,6 @@ namespace FastHashSet
 			foundNodeIndex = NullIndex;
 			priorNodeIndex = NullIndex;
 
-			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 			int hashIndex = hash % bucketsModSize;
 
@@ -2053,7 +2081,6 @@ namespace FastHashSet
 			return; // item not found
 		}
 
-		// is there a way to mark this function so that it will be inlined???
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private bool FindInSlotsArray(in T item, int hash)
 		{
@@ -2225,78 +2252,129 @@ namespace FastHashSet
 			}
 		}
 
-		public void FindAndRemoveIf(Predicate<T> match, Predicate<T> removeIf, out bool isFound)
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Get the information about the size of chains in the FastHashSet.</para>
+		/// <para>The size of chains should be small to reduce traversing and comparing items.</para>
+		/// <para>This can indicate the effectiveness of the hash code creation method.</para>
+		/// </summary>
+		/// <param name="avgNodeVisitsPerChain">Outputs the average node visits per chain.  This is a single number that summarizes the average length of chains in terms of the average number of compares until an equal value is found (when the item is present).</param>
+		/// <returns>A List of LevelAndCount items that gives the length of each chain in the FastHashSet.</returns>
+		public List<ChainLevelAndCount> GetChainLevelsCounts(out double avgNodeVisitsPerChain)
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
-			incrementForEverySetModification++;
-			#endif
+			Dictionary<int, int> itemsInChainToCountDict = new Dictionary<int, int>();
 
-			isFound = false;
-
-			//??? implement this
-		}
-
-		public void FindAndRemove(in T item, Predicate<T> removeIf, out bool isFound)
-		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
-			incrementForEverySetModification++;
-			#endif
-
-			isFound = false;
-
-			//??? implement this
-		}
-
-		public ref T FindFirstIf(Predicate<T> match, out bool isFound)
-		{
-			isFound = false;
-
-			//??? implement this
-
-			return ref slots[0].item;
-		}
-
-		// this is similar to HashSet<T>.TryGetValue, except it returns a ref to the value rather than a copy of the value found (TryGetValue uses an out parameter)
-		// this way you can modify the actual value in the set if it is a value type (you can always modify the object if it is a reference type - except I think if it is a string)
-		// also passing the item by in and the return by ref is faster for larger structs than passing by value
-		public ref T Find(in T item, out bool isFound)
-		{
-			isFound = false;
-#if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			// this function only makes sense when hashing
+			int chainCount = 0;
+			if (buckets != null)
 			{
-#endif
-				FindInSlotsArray(item, out int foundNodeIndex, out int priorNodeIndex, out int bucketsIndex);
-				if (foundNodeIndex != NullIndex)
+				for (int i = 0; i < buckets.Length; i++)
 				{
-					isFound = true;
-				}
+					int index = buckets[i];
+					if (index != NullIndex)
+					{
+						chainCount++;
+						int itemsInChain = 1;
 
-				return ref slots[foundNodeIndex].item; // if not found, then return a ref to the first node item, which isn't used for anything other than this
-#if !Exclude_No_Hash_Array_Implementation
+						while (slots[index].nextIndex != NullIndex)
+						{
+							index = slots[index].nextIndex;
+							itemsInChain++;
+						}
+
+						itemsInChainToCountDict.TryGetValue(itemsInChain, out int cnt);
+						cnt++;
+						itemsInChainToCountDict[itemsInChain] = cnt;
+					}
+				}
+			}
+
+			double totalAvgNodeVisitsIfVisitingAllChains = 0;
+			List<ChainLevelAndCount> lst = new List<ChainLevelAndCount>(itemsInChainToCountDict.Count);
+			foreach (KeyValuePair<int, int> keyVal in itemsInChainToCountDict)
+			{
+				lst.Add(new ChainLevelAndCount(keyVal.Key, keyVal.Value));
+				if (keyVal.Key == 1)
+				{
+					totalAvgNodeVisitsIfVisitingAllChains += keyVal.Value;
+				}
+				else
+				{
+					totalAvgNodeVisitsIfVisitingAllChains += keyVal.Value * (keyVal.Key + 1.0) / 2.0;
+				}
+			}
+
+			if (chainCount == 0)
+			{
+				avgNodeVisitsPerChain = 0;
 			}
 			else
 			{
-				int i;
-				for (i = 0; i < count; i++)
+				avgNodeVisitsPerChain = totalAvgNodeVisitsIfVisitingAllChains / chainCount;
+			}
+
+			lst.Sort();
+
+			return lst;
+		}
+
+		// this is a new public method not in HashSet
+		/// <summary>
+		/// <para>Reorders items in the same hash chain (items that have the same hash code or mod to the same index), so that they are adjacent in memory.</para>
+		/// <para>This gives better locality of reference for larger count of items, which can result in fewer cache misses.</para>
+		/// </summary>
+		public void ReorderChainedNodesToBeAdjacent()
+		{
+			if (slots != null)
+			{
+				TNode[] newSlotsArray = new TNode[slots.Length];
+
+				// copy elements using the buckets array chains so there is better locality in the chains
+				int index;
+				int newIndex = 1;
+				for (int i = 0; i < buckets.Length; i++)
 				{
-					if (comparer.Equals(item, noHashArray[i]))
+					index = buckets[i];
+					if (index != NullIndex)
 					{
-						isFound = true;
-						return ref noHashArray[i];
+						buckets[i] = newIndex;
+						while (true)
+						{
+							ref TNode t = ref slots[index];
+							ref TNode tNew = ref newSlotsArray[newIndex];
+							index = t.nextIndex;
+							newIndex++;
+
+							// copy
+							tNew.hashOrNextIndexForBlanks = t.hashOrNextIndexForBlanks;
+							tNew.item = t.item;
+							if (index == NullIndex)
+							{
+								tNew.nextIndex = NullIndex;
+								break;
+							}
+							tNew.nextIndex = newIndex;
+						}
 					}
 				}
 
-				// if item was not found, still need to return a ref to something, so return a ref to the first item in the array
-				return ref noHashArray[0];
+				newIndex++;
+				nextBlankIndex = newIndex;
+				firstBlankAtEndIndex = newIndex;
+				slots = newSlotsArray;
 			}
-#endif
 		}
 
+		/// <summary>
+		/// Looks for equalValue and if found, returns a copy of the found value in actualValue and returns true.
+		/// </summary>
+		/// <param name="equalValue">The item to look for.</param>
+		/// <param name="actualValue">The copy of the found value, if found, or the default value of the same type if not found.</param>
+		/// <returns>True if equalValue is found, or false if not found.</returns>
 		public bool TryGetValue(T equalValue, out T actualValue)
 		{
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				FindInSlotsArray(equalValue, out int foundNodeIndex, out int priorNodeIndex, out int bucketsIndex);
@@ -2328,6 +2406,10 @@ namespace FastHashSet
 #endif
 		}
 
+		/// <summary>
+		/// Adds all items in <paramref name="other"/> into this FastHashSet.  This is similar to AddRange for other types of collections, but it is called UnionWith for ISets.
+		/// </summary>
+		/// <param name="other">The enumerable items to add (cannot be null).</param>
 		public void UnionWith(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2335,7 +2417,7 @@ namespace FastHashSet
 				throw new ArgumentNullException(nameof(other), "Value cannot be null.");
 			}
 
-			//??? Note: HashSet doesn't seem to increment this unless it really changes something - like doing an Add(3) when 3 is already in the hashset doesn't increment, same as doing a UnionWith with an empty set as the param
+			// Note: HashSet doesn't seem to increment this unless it really changes something - like doing an Add(3) when 3 is already in the hashset doesn't increment, same as doing a UnionWith with an empty set as the param.
 			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
 			#endif
@@ -2354,13 +2436,12 @@ namespace FastHashSet
 			// do this with more code because it might get called in some high performance situations
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				foreach (T item in other)
 				{
-					//AddToHashSetIfNotFound(in item, item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet));
-					AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet));
+					AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet), out bool isFound);
 				}
 #if !Exclude_No_Hash_Array_Implementation
 			}
@@ -2371,7 +2452,7 @@ namespace FastHashSet
 				foreach (T item in other)
 				{
 					//??? if it's easier for the jit compiler or il compiler to remove the array bounds checking then
-					// have i < noHashArray.Length and do the check for usedItemsCount within the loop with a break statment
+					// have i < noHashArray.Length and do the check for count within the loop with a break statement
 					for (i = 0; i < count; i++)
 					{
 						if (comparer.Equals(item, noHashArray[i]))
@@ -2384,8 +2465,7 @@ namespace FastHashSet
 					if (i == noHashArray.Length)
 					{
 						SwitchToHashing();
-						//AddToHashSetIfNotFound(in item, item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet));
-						AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet));
+						AddToHashSetIfNotFound(in item, (comparer.GetHashCode(item) & HighBitNotSet), out bool isFound);
 					}
 					else
 					{
@@ -2400,6 +2480,10 @@ namespace FastHashSet
 #endif
 		}
 
+		/// <summary>
+		/// Removes all items in <paramref name="other"/> from the FastHashSet.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
 		public void ExceptWith(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2423,6 +2507,10 @@ namespace FastHashSet
 			}
 		}
 
+		/// <summary>
+		/// Removes items from the FastHashSet so that the only remaining items are those contained in <paramref name="other"/> that also match an item in the FastHashSet.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
 		public void IntersectWith(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2444,13 +2532,12 @@ namespace FastHashSet
 
 			//??? implement the faster methof if other is HashSet or FastHashSet
 			//FastHashSet<T> otherSet = other as FastHashSet<T>;
-			//if (otherSet != null && Equals(comparer, otherSet.comparer)) //??? also make sure the comparers are equal - how, they are probably references? - maybe they override Equals?
+			//if (otherSet != null && Equals(comparer, otherSet.comparer)) // also make sure the comparers are equal - how, they are probably references? - maybe they override Equals?
 			//{
-			//	//???
 			//}
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
@@ -2485,7 +2572,7 @@ namespace FastHashSet
 				// the problem with this method is it reorders items and even though that shouldn't matter in a set
 				// it might cause issues with code that incorrectly assumes order stays the same for operations like this
 
-				// possibly a faster implementation would be to use the method above, but keep track of original order with an int array of the size of usedItemsCount (ex. item at 0 was originally 5, and also item at 5 was originally 0)
+				// possibly a faster implementation would be to use the method above, but keep track of original order with an int array of the size of count (ex. item at 0 was originally 5, and also item at 5 was originally 0)
 
 				// set the corresponding bit in this int if an item was found
 				// using a uint means the no hashing array cannot be more than 32 items
@@ -2565,13 +2652,17 @@ namespace FastHashSet
 #endif
 		}
 
-		//??? surround all of the Is... Sub/Super methods with an #if Allow_Set_Operations so that these can easily be removed if not needed
-
 		// An empty set is a proper subset of any other collection. Therefore, this method returns true if the collection represented by the current HashSet<T> object
 		// is empty unless the other parameter is also an empty set.
 		// This method always returns false if Count is greater than or equal to the number of elements in other.
 		// If the collection represented by other is a HashSet<T> collection with the same equality comparer as the current HashSet<T> object,
 		// then this method is an O(n) operation. Otherwise, this method is an O(n + m) operation, where n is Count and m is the number of elements in other.
+
+		/// <summary>
+		/// Returns true if this FastHashSet is a proper subset of <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if a proper subset of <paramref name="other"/>.</returns>
 		public bool IsProperSubsetOf(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2603,22 +2694,14 @@ namespace FastHashSet
 				{
 					foreach (T item in other)
 					{
-						//??? is there a faster way to do this? (determine if there are some items in other)
 						return true;
 					}
 					return false;
 				}
 			}
 
-			//if (collection != null)
-			//{
-
-			//	//??? how can this be faster if other is a HashSet or FastHashSet with the same comparer
-			//	// don't have to mark because we know all items are unique and with FastHashSet we can re-use the hash
-			//}
-
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
@@ -2690,6 +2773,11 @@ namespace FastHashSet
 #endif
 		}
 
+		/// <summary>
+		/// Returns true if this FastHashSet is a subset of <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if a subset of <paramref name="other"/>.</returns>
 		public bool IsSubsetOf(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2716,15 +2804,8 @@ namespace FastHashSet
 				}
 			}
 
-			//if (collection != null)
-			//{
-
-			//	//??? how can this be faster if other is a HashSet or FastHashSet with the same comparer
-			//	// don't have to mark because we know all items are unique and with FastHashSet we can re-use the hash
-			//}
-
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
@@ -2784,7 +2865,12 @@ namespace FastHashSet
 			}
 #endif
 		}
-		
+
+		/// <summary>
+		/// Returns true if this FastHashSet is a proper superset of <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if a proper superset of <paramref name="other"/>.</returns>
 		public bool IsProperSupersetOf(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2814,7 +2900,6 @@ namespace FastHashSet
 			{
 				foreach (T item in other)
 				{
-					//??? is there a faster way to do this?
 					goto someItemsInOther;
 				}
 				return true;
@@ -2822,15 +2907,8 @@ namespace FastHashSet
 
 someItemsInOther:
 
-			//if (collection != null)
-			//{
-
-			//	//??? how can this be faster if other is a HashSet or FastHashSet with the same comparer
-			//	// don't have to mark because we know all items are unique and with FastHashSet we can re-use the hash
-			//}
-
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
@@ -2900,6 +2978,11 @@ someItemsInOther:
 #endif
 		}
 
+		/// <summary>
+		/// Returns true if this FastHashSet is a superset of <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if a superset of <paramref name="other"/>.</returns>
 		public bool IsSupersetOf(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2924,7 +3007,6 @@ someItemsInOther:
 			{
 				foreach (T item in other)
 				{
-					//??? is there a faster way to do this?
 					goto someItemsInOther;
 				}
 				return true;
@@ -2937,15 +3019,8 @@ someItemsInOther:
 				return false; // an empty set can never be a proper superset of anything (except an empty collection - but an empty collection returns true above)
 			}
 
-			//if (collection != null)
-			//{
-
-			//	//??? how can this be faster if other is a HashSet or FastHashSet with the same comparer
-			//	// don't have to mark because we know all items are unique and with FastHashSet we can re-use the hash
-			//}
-
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				foreach (T item in other)
@@ -2985,6 +3060,11 @@ someItemsInOther:
 #endif
 		}
 
+		/// <summary>
+		/// Returns true if this FastHashSet contains any items in <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if contains any items in <paramref name="other"/>.</returns>
 		public bool Overlaps(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -2997,12 +3077,6 @@ someItemsInOther:
 				return count > 0; // return false if there are no items when both sets are the same, otherwise return true when both sets are the same
 			}
 
-			//??? maybe could do something like:
-			// and then call Contains with in or Contains without in?
-			//if (typeof(T).IsValueType) // or maybe typeof(T).GetType().IsValueType so support .net core?
-			//{
-			//}
-
 			foreach (T item in other)
 			{
 				if (Contains(in item))
@@ -3013,6 +3087,11 @@ someItemsInOther:
 			return false;
 		}
 
+		/// <summary>
+		/// Returns true if this FastHashSet contains exactly the same elements as <paramref name="other"/>.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
+		/// <returns>True if contains the same elements as <paramref name="other"/>.</returns>
 		public bool SetEquals(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -3063,7 +3142,7 @@ someItemsInOther:
 					}
 
 #if !Exclude_No_Hash_Array_Implementation
-					if (isHashing)
+					if (IsHashing)
 					{
 #endif
 						int pastNodeIndex = slots.Length;
@@ -3073,12 +3152,13 @@ someItemsInOther:
 						}
 
 #if !Exclude_No_Hash_Array_Implementation
-						if (fhset.isHashing)
+						if (fhset.IsHashing)
 						{
 #endif
 							for (int i = 1; i < pastNodeIndex; i++)
 							{
-								//??? could not do the blank check if we know there aren't any blanks - below code and in the loop in the else
+								// could not do the blank check if we know there aren't any blanks - below code and in the loop in the else
+								// could do the check to see if there are any blanks first and then have 2 versions of this code, one with the check for blank and the other without it
 								if (slots[i].nextIndex != BlankNextIndexIndicator) // skip any blank nodes
 								{
 									if (!fhset.FindInSlotsArray(in slots[i].item, slots[i].hashOrNextIndexForBlanks))
@@ -3121,7 +3201,7 @@ someItemsInOther:
 
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				int foundItemCount = 0; // the count of found items in the hash - without double counting
@@ -3180,6 +3260,11 @@ someItemsInOther:
 		}
 
 		// From the online document: Modifies the current HashSet<T> object to contain only elements that are present either in that object or in the specified collection, but not both.
+		/// <summary>
+		/// Modifies the FastHashSet so that it contains only items in the FashHashSet or <paramref name="other"/>, but not both.
+		/// So items in <paramref name="other"/> that are also in the FastHashSet are removed, and items in <paramref name="other"/> that are not in the FastHashSet are added.
+		/// </summary>
+		/// <param name="other">The enumerable items (cannot be null).</param>
 		public void SymmetricExceptWith(IEnumerable<T> other)
 		{
 			if (other == null)
@@ -3192,52 +3277,23 @@ someItemsInOther:
 				Clear();
 			}
 
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
-
-			//??? implement the faster methof if other is HashSet or FastHashSet
-			//FastHashSet<T> otherSet = other as FastHashSet<T>;
-			//if (otherSet != null && Equals(comparer, otherSet.comparer)) //??? also make sure the comparers are equal - how, they are probably references? - maybe they override Equals?
-			//{
-			//	//???
-			//}
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (!isHashing)
+			if (!IsHashing)
 			{
 				// to make things easier for now, just switch to hashing if calling this function and deal with only one set of code
 				SwitchToHashing();
 			}
 #endif
 
-			//DebugOutput.OutputSortedEnumerableItems(other, nameof(other));
-			//DebugOutput.OutputSortedEnumerableItems(this, "this set");
-
-			//System.Diagnostics.Debug.WriteLine("other");
-			//List<T> lst = new List<T>(other);
-			//lst.Sort();
-			//foreach (T item in lst)
-			//{
-			//	System.Diagnostics.Debug.WriteLine(item.ToString());
-			//}
-
-			//System.Diagnostics.Debug.WriteLine("");
-			//System.Diagnostics.Debug.WriteLine("set");
-			//List<T> lst2 = new List<T>(this);
-			//lst2.Sort();
-			//foreach (T item in lst2)
-			//{
-			//	System.Diagnostics.Debug.WriteLine(item.ToString());
-			//}
-
 			// for the first loop through other, add any unfound items and mark
-			//int foundItemCount = 0; // the count of found items in the hash - without double counting
 			int addedNodeIndex;
 			int maxAddedNodeIndex = NullIndex;
 			foreach (T item in other)
 			{
-				//addedNodeIndex = AddToHashSetIfNotFoundAndMark(in item, item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet));
 				addedNodeIndex = AddToHashSetIfNotFoundAndMark(in item, (comparer.GetHashCode(item) & HighBitNotSet));
 				if (addedNodeIndex > maxAddedNodeIndex)
 				{
@@ -3251,86 +3307,11 @@ someItemsInOther:
 			}
 
 			UnmarkAllNextIndexValues(maxAddedNodeIndex);
-			//}
-			//else
-			//{
-			//	// Note: we could actually do this faster by moving any found items to the front and keeping track of the found items
-			//	// with a single int index
-			//	// the problem with this method is it reorders items and even though that shouldn't matter in a set
-			//	// it might cause issues with code that incorrectly assumes order stays the same for operations like this
-
-			//	// possibly a faster implementation would be to use the method above, but keep track of original order with an int array of the size of usedItemsCount (ex. item at 0 was originally 5, and also item at 5 was originally 0)
-
-
-			//	int i;
-
-			//	int originalUsedItemsCount = usedItemsCount;
-
-			//	foreach (T item in other)
-			//	{
-			//		for (i = 0; i < usedItemsCount; i++)
-			//		{
-			//			if (comparer == null ? item.Equals(initialArray[i]) : comparer.Equals(item, initialArray[i]))
-			//			{
-			//				goto found; // break out of inner for loop
-			//			}
-			//		}
-
-			//		// not found, so add to the end
-			//		if (usedItemsCount < initialArray.Length)
-			//		{
-			//			usedItemsCount++;
-			//		}
-			//		else
-			//		{
-			//			// must switch from using initialArray to hashing, but also mark all of the items at index originalUsedItemsCount and after and
-			//			// return the largest index of the marked items
-
-			//		}
-			//found:;
-			//	}
-
-			//	// remove any items that are unmarked (unfound)
-			//	// go backwards because this can be faster
-			//	for (i = usedItemsCount - 1; i >= 0 ; i--)
-			//	{
-			//		if (foundItemArray[i] == 0)
-			//		{
-			//			if (i < usedItemsCount - 1)
-			//			{
-			//				// a faster method if there are multiple unfound items in a row is to find the first used item (make i go backwards until the item is used and then increment i by 1)
-			//				// if there aren't multiple unused in a row, then this is a bit of a waste
-
-			//				int j = i + 1; // j now points to the next item after the unfound one that we want to keep
-
-			//				i--;
-			//				while (i >= 0)
-			//				{
-			//					if (foundItemArray[i] == 1)
-			//					{
-			//						break;
-			//					}
-			//					i--;
-			//				}
-			//				i++;
-
-			//				int k = i;
-			//				for ( ; j < usedItemsCount; j++, k++)
-			//				{
-			//					initialArray[k] = initialArray[j];
-			//				}
-			//			}
-
-			//			usedItemsCount--;
-			//		}
-			//	}
-			//}
 		}
 
 		private void RemoveIfNotMarked(in T item)
 		{
 			// calling this function assumes we are hashing
-			//int hash = item == null ? 0 : (comparer.GetHashCode(item) & HighBitNotSet);
 			int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 			int hashIndex = hash % bucketsModSize;
 
@@ -3385,7 +3366,12 @@ someItemsInOther:
 			}
 			return; // item not found
 		}
-			
+		
+		/// <summary>
+		/// Removes any items in the FastHashSet where the <paramref name="match"/> predicate is true for that item.
+		/// </summary>
+		/// <param name="match">The match predicate (cannot be null).</param>
+		/// <returns>The number of items removed.</returns>
 		public int RemoveWhere(Predicate<T> match)
 		{
 			if (match == null)
@@ -3393,18 +3379,18 @@ someItemsInOther:
 				throw new ArgumentNullException(nameof(match), "Value cannot be null.");
 			}
 
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 			int removeCount = 0;
 
 #if !Exclude_No_Hash_Array_Implementation
-			if (isHashing)
+			if (IsHashing)
 			{
 #endif
 				// must traverse all of the chains instead of just looping through the slots array because going through the chains is the only way to set
-				// nodes within a chain to blank and still be able to remove the blnak node from the chain
+				// nodes within a chain to blank and still be able to remove the blank node from the chain
 
 				int priorIndex;
 				int nextIndex;
@@ -3523,7 +3509,7 @@ someItemsInOther:
 					{
 						int hashCode = 0;
 #if !Exclude_No_Hash_Array_Implementation
-						if (set.isHashing)
+						if (set.IsHashing)
 						{
 #endif
 							int pastNodeIndex = set.slots.Length;
@@ -3558,16 +3544,28 @@ someItemsInOther:
 			}
 		}
 
+		/// <summary>
+		/// Creates and returns the IEqualityComparer for a FastHashSet which can be used to compare two FastHashSets based on their items being equal.
+		/// </summary>
+		/// <returns>An IEqualityComparer for a FastHashSet.</returns>
 		public static IEqualityComparer<FastHashSet<T>> CreateSetComparer()
 		{
 			return new FastHashSetEqualityComparer();
 		}
 
+		/// <summary>
+		/// Allows enumerating through items in the FastHashSet.  Order is not guaranteed.
+		/// </summary>
+		/// <returns>The IEnumerator<T> for the FastHashSet.</returns>
 		public IEnumerator<T> GetEnumerator()
 		{
 			return new FastHashSetEnumerator<T>(this);
 		}
 
+		/// <summary>
+		/// Allows enumerating through items in the FastHashSet.  Order is not guaranteed.
+		/// </summary>
+		/// <returns>The IEnumerator for the FastHashSet.</returns>
 		IEnumerator IEnumerable.GetEnumerator()
 		{
 			return new FastHashSetEnumerator<T>(this);
@@ -3578,19 +3576,23 @@ someItemsInOther:
 			private FastHashSet<T2> set;
 			private int currentIndex = -1;
 
-			#if !Exclude_Check_For_Is_Disposed_In_Enumerator
+#if !Exclude_Check_For_Is_Disposed_In_Enumerator
 			private bool isDisposed;
-			#endif
+#endif
 
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			private int incrementForEverySetModification;
-			#endif
+#endif
 
+			/// <summary>
+			/// Constructor for the FastHashSetEnumerator that takes a FastHashSet as a parameter.
+			/// </summary>
+			/// <param name="set">The FastHashSet to enumerate through.</param>
 			public FastHashSetEnumerator(FastHashSet<T2> set)
 			{
 				this.set = set;
 #if !Exclude_No_Hash_Array_Implementation
-				if (set.isHashing)
+				if (set.IsHashing)
 				{
 #endif
 					currentIndex = NullIndex; // 0 is the index before the first possible node (0 is the blank node)
@@ -3602,31 +3604,35 @@ someItemsInOther:
 				}
 #endif
 
-				#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 				incrementForEverySetModification = set.incrementForEverySetModification;
-				#endif
+#endif
 			}
 
+			/// <summary>
+			/// Moves to the next item for the FastHashSet enumerator.
+			/// </summary>
+			/// <returns>True if there was a next item, otherwise false.</returns>
 			public bool MoveNext()
 			{
-				#if !Exclude_Check_For_Is_Disposed_In_Enumerator
+#if !Exclude_Check_For_Is_Disposed_In_Enumerator
 				if (isDisposed)
 				{
 					// the only reason this code returns false when Disposed is called is to be compatable with HashSet<T>
 					// if this level of compatibility isn't needed, then #define Exclude_Check_For_Is_Disposed_In_Enumerator to remove this check and makes the code slightly faster
 					return false;
 				}
-				#endif
+#endif
 
-				#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 				if (incrementForEverySetModification != set.incrementForEverySetModification)
 				{
 					throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 				}
-				#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-				if (set.isHashing)
+				if (set.IsHashing)
 				{
 #endif
 					// it's easiest to just loop through the node array and skip any nodes that are blank
@@ -3666,17 +3672,20 @@ someItemsInOther:
 #endif
 			}
 
+			/// <summary>
+			/// Resets the FastHashSet enumerator.
+			/// </summary>
 			public void Reset()
 			{
-				#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 				if (incrementForEverySetModification != set.incrementForEverySetModification)
 				{
 					throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
 				}
-				#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
-				if (set.isHashing)
+				if (set.IsHashing)
 				{
 #endif
 					currentIndex = NullIndex; // 0 is the index before the first possible node (0 is the blank node)
@@ -3689,21 +3698,25 @@ someItemsInOther:
 #endif
 			}
 
+			/// <summary>
+			/// Implements the IDisposable.Dispose method for the FastHashSet enumerator.
+			/// </summary>
 			void IDisposable.Dispose()
 			{
-				#if !Exclude_Check_For_Is_Disposed_In_Enumerator
+#if !Exclude_Check_For_Is_Disposed_In_Enumerator
 				isDisposed = true;
-				#endif
+#endif
 			}
 
+			/// <summary>
+			///  Gets the current item for the FastHashSet enumerator.
+			/// </summary>
 			public T2 Current
 			{
 				get
 				{
-					//??? why doesn't Current check if the set was modified and throw an exception - there might not even be a current anymore if something was removed?
-					// maybe because they thought throwing an exception for a Property isn't good?
 #if !Exclude_No_Hash_Array_Implementation
-					if (set.isHashing)
+					if (set.IsHashing)
 					{
 #endif
 						// it's easiest to just loop through the node array and skip any nodes with nextIndex = 0
@@ -3727,12 +3740,15 @@ someItemsInOther:
 				}
 			}
 
+			/// <summary>
+			///  Gets a reference to the current item for the FastHashSet enumerator.
+			/// </summary>
 			public ref T2 CurrentRef
 			{
 				get
 				{
 #if !Exclude_No_Hash_Array_Implementation
-					if (set.isHashing)
+					if (set.IsHashing)
 					{
 #endif
 						// it's easiest to just loop through the node array and skip any nodes with nextIndex = 0
@@ -3765,13 +3781,15 @@ someItemsInOther:
 				}
 			}
 
+			/// <summary>
+			///  True if the current item is valid for the FastHashSet enumerator, otherwise false.
+			/// </summary>
 			public bool IsCurrentValid
 			{
 				get
 				{
-					//??? why doesn't Current check if the set was modified and throw an exception - there might not even be a current anymore if something was removed?
 #if !Exclude_No_Hash_Array_Implementation
-					if (set.isHashing)
+					if (set.IsHashing)
 					{
 #endif
 						// it's easiest to just loop through the node array and skip any nodes with nextIndex = 0
@@ -3795,46 +3813,104 @@ someItemsInOther:
 				}
 			}
 
+			/// <summary>
+			/// Gets the Current item for the FastHashSet enumerator.
+			/// </summary>
 			object IEnumerator.Current
 			{
 				get { return Current; }
 			}
 		}
-		#if false
-        // Implement GetEnumerator to return IEnumerator<T> to enable 
-        // foreach iteration of our list. Note that in C# 2.0  
-        // you are not required to implement Current and MoveNext. 
-        // The compiler will create a class that implements IEnumerator<T>. 
-        public IEnumerator<T> GetEnumerator() 
-        { 
-            Node current = head; 
- 
-            while (current != null) 
-            { 
-                yield return current.Data; 
-                current = current.Next; 
-            } 
-        } 
- 
-        // We must implement this method because  
-        // IEnumerable<T> inherits IEnumerable 
-        IEnumerator IEnumerable.GetEnumerator() 
-        { 
-            return GetEnumerator(); 
-        }
-		#endif
+
+		public static class FastHashSetUtil
+		{
+			/// <summary>
+			///  Return the prime number that is equal to n (if n is a prime number) or the closest prime number greather than n.
+			/// </summary>
+			/// <param name="n">The lowest number to start looking for a prime.</param>
+			/// <returns>The passed in n parameter value (if it is prime), or the next highest prime greater than n.</returns>
+			public static int GetEqualOrClosestHigherPrime(int n)
+			{
+				if (n >= LargestPrimeLessThanMaxInt)
+				{
+					// the next prime above this number is int.MaxValue, which we don't want to return that value because some indices increment one or two ints past this number and we don't want them to overflow
+					return LargestPrimeLessThanMaxInt;
+				}
+
+				if ((n & 1) == 0)
+				{
+					n++; // make n odd
+				}
+
+				bool found;
+
+				do
+				{
+					found = true;
+
+					int sqrt = (int)Math.Sqrt(n);
+					for (int i = 3; i <= sqrt; i += 2)
+					{
+						int div = n / i;
+						if (div * i == n) // dividing and multiplying might be faster than a single % (n % i) == 0
+						{
+							found = false;
+							n += 2;
+							break;
+						}
+					}
+				} while (!found);
+
+				return n;
+			}
+		}
 	}
 
-	public class a<T> : IEnumerable<T>
+	public struct ChainLevelAndCount : IComparable<ChainLevelAndCount>
 	{
-		public IEnumerator<T> GetEnumerator()
+		public ChainLevelAndCount(int level, int count)
 		{
-			throw new NotImplementedException();
+			this.Level = level;
+			this.Count = count;
 		}
 
-		IEnumerator IEnumerable.GetEnumerator()
+		public int Level;
+		public int Count;
+
+		public int CompareTo(ChainLevelAndCount other)
 		{
-			throw new NotImplementedException();
+			return Level.CompareTo(other.Level);
 		}
 	}
+	
+#if DEBUG
+	public static class DebugOutput
+	{
+		public static void OutputEnumerableItems<T2>(IEnumerable<T2> e, string enumerableName)
+		{
+			System.Diagnostics.Debug.WriteLine("---start items: " + enumerableName + "---");
+			int count = 0;
+			foreach (T2 item in e)
+			{
+				System.Diagnostics.Debug.WriteLine(item.ToString());
+				count++;
+			}
+			System.Diagnostics.Debug.WriteLine("---end items: " + enumerableName + "; count = " + count.ToString("N0") + "---");
+		}
+
+		public static void OutputSortedEnumerableItems<T2>(IEnumerable<T2> e, string enumerableName)
+		{
+			List<T2> lst = new List<T2>(e);
+			lst.Sort();
+			System.Diagnostics.Debug.WriteLine("---start items (sorted): " + enumerableName + "---");
+			int count = 0;
+			foreach (T2 item in lst)
+			{
+				System.Diagnostics.Debug.WriteLine(item.ToString());
+				count++;
+			}
+			System.Diagnostics.Debug.WriteLine("---end items: " + enumerableName + "; count = " + count.ToString("N0") + "---");
+		}
+	}
+#endif
 }
