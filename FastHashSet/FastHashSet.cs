@@ -185,6 +185,7 @@ namespace Motvin.Collections
 		/// <param name="areAllCollectionItemsDefinitelyUnique">True if the collection items are all unique.  The collection items can be added more quickly if they are known to be unique.</param>
 		/// <param name="capacity">The initial capacity of the FastHashSet.</param>
 		/// <param name="comparer">The IEqualityComparer to use for determining equality of elements in the FastHashSet.</param>
+#if false // removed for now because it's probably not that useful and needs some changes to be correct
 		public FastHashSet(IEnumerable<T> collection, bool areAllCollectionItemsDefinitelyUnique, int capacity, IEqualityComparer<T> comparer = null)
 		{
 			this.comparer = comparer ?? EqualityComparer<T>.Default;
@@ -192,7 +193,7 @@ namespace Motvin.Collections
 
 			if (areAllCollectionItemsDefinitelyUnique)
 			{
-				//??? this and the call below must deal correctly with an initial capacity already set
+				// this and the call below must deal correctly with an initial capacity already set
 				AddInitialUniqueValuesEnumerable(collection);
 			}
 			else
@@ -200,8 +201,8 @@ namespace Motvin.Collections
 				AddInitialEnumerable(collection);
 			}
 		}
+#endif
 
-		// maybe add a param to override the initial capacity???
 		private void AddInitialUniqueValuesEnumerable(IEnumerable<T> collection)
 		{
 			int itemsCount = 0;
@@ -816,7 +817,7 @@ namespace Motvin.Collections
 				IncreaseCapacity(capacity - currentCapacity);
 			}
 
-			//??? is this correct - this should be the number where the next lowest number would force a resize of buckets array with the current loadfactor and the entire slots array is full
+			// this should be the number where the next lowest number would force a resize of buckets array with the current loadfactor and the entire slots array is full
 			int calcedNewBucketsArraySize = (int)(slots.Length / LoadFactorConst) + 1;
 
 			if (calcedNewBucketsArraySize < 0 && calcedNewBucketsArraySize > LargestPrimeLessThanMaxInt)
@@ -958,8 +959,8 @@ namespace Motvin.Collections
 		// if not yet hashing, switch to hashing
 		private void IncreaseCapacity(int capacityIncrease = -1)
 		{
-			//??? this function might be a fair bit over overhead for resizing at small sizes (like 33 and 65)
-			//- could try to reduce the overhead - there could just be a nextSlotsArraySize (don't need increase?), or nextSlotsArraySizeIncrease?
+			// this function might be a fair bit over overhead for resizing at small sizes (like 33 and 65)
+			// could try to reduce the overhead - there could just be a nextSlotsArraySize (don't need increase?), or nextSlotsArraySizeIncrease?
 			// then we don't have to call GetNewSlotsArraySizeIncrease at all?
 			// could test the overhead by just replacing all of the code with 
 #if !Exclude_No_Hash_Array_Implementation
@@ -2076,7 +2077,7 @@ namespace Motvin.Collections
 
 				priorIndex = index;
 
-				index = t.nextIndex & MarkNextIndexBitMaskInverted; // is this function ever called when nextIndex values can be marked???
+				index = t.nextIndex;
 			}
 			return; // item not found
 		}
@@ -2163,7 +2164,7 @@ namespace Motvin.Collections
 						// first try to set it to blank by adding it to the blank at end group
 						if (index == lastNonBlankIndex)
 						{
-							//??? does it make sense to attempt this because any already blank items before this will not get added to the 
+							//??? does it make sense to attempt this because any already blank items before this will not get added
 							lastNonBlankIndex--;
 							if (nextBlankIndex == firstBlankAtEndIndex)
 							{
@@ -2528,13 +2529,6 @@ namespace Motvin.Collections
 			#endif
 
 			// if hashing, find each item in the slots array and mark anything found, but remove from being found again
-			// after
-
-			//??? implement the faster methof if other is HashSet or FastHashSet
-			//FastHashSet<T> otherSet = other as FastHashSet<T>;
-			//if (otherSet != null && Equals(comparer, otherSet.comparer)) // also make sure the comparers are equal - how, they are probably references? - maybe they override Equals?
-			//{
-			//}
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)

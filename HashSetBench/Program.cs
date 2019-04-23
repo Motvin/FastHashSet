@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Text;
 using BenchmarkDotNet.Running;
+using System.Collections.Generic;
 
 namespace HashSetBench
 {
@@ -8,7 +9,6 @@ namespace HashSetBench
 	{
 		static void Main(string[] args)
 		{
-			
 			var summary = BenchmarkRunner.Run<RefCountHashSetVFastHashSet>();
 			//var summary = BenchmarkRunner.Run<SumSmallClassVsStructList>();
 			//var summary2 = BenchmarkRunner.Run<AddSmallClassVsStructList>();
