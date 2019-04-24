@@ -16,7 +16,7 @@ namespace Motvin.Collections
 	// also add using System.Runtime.Serialization;
 
 	public class FastHashSet<T> : ICollection<T>, IEnumerable<T>, IEnumerable, IReadOnlyCollection<T>, ISet<T>
-    {
+	{
 		private const int MaxSlotsArraySize = int.MaxValue - 2;
 
 		// this is the size of the non-hash array used to make small counts of items faster
@@ -40,7 +40,7 @@ namespace Motvin.Collections
 
 		// doing an | (bitwise or) with this and the nextIndex marks the node, setting the bit back will give the original nextIndex value
 		private const int MarkNextIndexBitMask = unchecked((int)0b1000_0000_0000_0000_0000_0000_0000_0000);
-		
+
 		// doing an & (bitwise and) with this and the nextIndex sets it back to the original value (unmarks it)
 		private const int MarkNextIndexBitMaskInverted = ~MarkNextIndexBitMask;
 
@@ -51,7 +51,7 @@ namespace Motvin.Collections
 		// these are primes above the .75 loadfactor of the power of 2 except from 30,000 through 80,000, where we conserve space to help with cache space
 		private static readonly int[] bucketsSizeArray = { 11, 23, 47, 89, 173, 347, 691, 1367, 2741, 5471, 10_937, 19_841/*16_411/*21_851*/, 40_241/*32_771/*43_711*/, 84_463/*65_537/*87_383*/, /*131_101*/174_767,
 			/*262_147*/349_529, 699_053, 1_398_107, 2_796_221, 5_592_407, 11_184_829, 22_369_661, 44_739_259, 89_478_503, 17_8956_983, 35_7913_951, 715_827_947, 143_1655_777, LargestPrimeLessThanMaxInt};
-			
+
 		// the buckets array can be pre-allocated to a large size, but it's not good to use that entire size for hashing because of cache locality
 		// instead do at most 3 size steps (for 3 levels of cache) before using its actual allocated size
 
@@ -65,9 +65,9 @@ namespace Motvin.Collections
 
 		private int bucketsModSize;
 
-		#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 		private int incrementForEverySetModification;
-		#endif
+#endif
 
 		// resize the buckets array when the count reaches this value
 		private int resizeBucketsCountThreshold;
@@ -86,11 +86,11 @@ namespace Motvin.Collections
 
 		private TNode[] slots;
 
-		#if !Exclude_No_Hash_Array_Implementation
+#if !Exclude_No_Hash_Array_Implementation
 		// used for small sets - when the count of items is small, it is usually faster to just use an array of the items and not do hashing at all (this can also use slightly less memory)
 		// There may be some cases where the sets can be very small, but there can be very many of these sets.  This can be good for these cases.
 		private T[] noHashArray;
-		#endif
+#endif
 
 		internal enum FoundType
 		{
@@ -206,10 +206,10 @@ namespace Motvin.Collections
 		private void AddInitialUniqueValuesEnumerable(IEnumerable<T> collection)
 		{
 			int itemsCount = 0;
-			#if !Exclude_No_Hash_Array_Implementation
+#if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
 			{
-			#endif
+#endif
 				nextBlankIndex = 1;
 				foreach (T item in collection)
 				{
@@ -228,7 +228,7 @@ namespace Motvin.Collections
 					nextBlankIndex++;
 					itemsCount++;
 				}
-			#if !Exclude_No_Hash_Array_Implementation
+#if !Exclude_No_Hash_Array_Implementation
 			}
 			else
 			{
@@ -237,7 +237,7 @@ namespace Motvin.Collections
 					noHashArray[itemsCount++] = item;
 				}
 			}
-			#endif
+#endif
 			count = itemsCount;
 			firstBlankAtEndIndex = nextBlankIndex;
 		}
@@ -250,7 +250,7 @@ namespace Motvin.Collections
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
-				for (int index = buckets[hashIndex]; index != NullIndex; )
+				for (int index = buckets[hashIndex]; index != NullIndex;)
 				{
 					ref TNode t = ref slots[index];
 
@@ -328,7 +328,7 @@ namespace Motvin.Collections
 								ref TNode t = ref slots[nextBlankIndex];
 
 								t.hashOrNextIndexForBlanks = hash;
-								t.nextIndex = buckets[hashIndex];;
+								t.nextIndex = buckets[hashIndex]; ;
 								t.item = t2.item;
 
 								buckets[hashIndex] = nextBlankIndex;
@@ -521,7 +521,7 @@ namespace Motvin.Collections
 					newBucketsArrayModSize = newBucketsArraySize;
 				}
 			}
-			
+
 			if (newSlotsArraySize == 0)
 			{
 				// this is an error, the int.MaxValue has been used for capacity and we require more - throw an Exception for this
@@ -546,7 +546,7 @@ namespace Motvin.Collections
 
 			firstBlankAtEndIndex = nextBlankIndex;
 		}
-		
+
 #if !Exclude_No_Hash_Array_Implementation
 		private void CreateNoHashArray()
 		{
@@ -793,9 +793,9 @@ namespace Motvin.Collections
 		public int EnsureCapacity(int capacity)
 		{
 			// this function is only in .net core for HashSet as of 4/15/2019
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 			int currentCapacity;
 
@@ -900,7 +900,7 @@ namespace Motvin.Collections
 			{
 				oldArraySize = InitialSlotsArraySize; // this isn't the old array size, but it is the initial size we should start at
 			}
-				
+
 			int increaseInSize;
 
 			if (oldArraySize == 1)
@@ -1174,9 +1174,9 @@ namespace Motvin.Collections
 		/// </summary>
 		public void Clear()
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
@@ -1198,9 +1198,9 @@ namespace Motvin.Collections
 		/// </summary>
 		public void TrimExcess()
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
@@ -1351,9 +1351,9 @@ namespace Motvin.Collections
 		/// <returns>True if the item was added, or false if the FastHashSet already contains the item.</returns>
 		public bool Add(T item)
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
@@ -1363,7 +1363,7 @@ namespace Motvin.Collections
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
-				for (int index = buckets[hashIndex]; index != NullIndex; )
+				for (int index = buckets[hashIndex]; index != NullIndex;)
 				{
 					ref TNode t = ref slots[index];
 
@@ -1460,7 +1460,7 @@ namespace Motvin.Collections
 
 			int hashIndex = hash % bucketsModSize;
 
-			for (int index = buckets[hashIndex]; index != NullIndex; )
+			for (int index = buckets[hashIndex]; index != NullIndex;)
 			{
 				ref TNode t = ref slots[index];
 
@@ -1516,7 +1516,7 @@ namespace Motvin.Collections
 
 			int hashIndex = hash % bucketsModSize;
 
-			for (int index = buckets[hashIndex]; index != NullIndex; )
+			for (int index = buckets[hashIndex]; index != NullIndex;)
 			{
 				ref TNode t = ref slots[index];
 
@@ -1525,7 +1525,7 @@ namespace Motvin.Collections
 					return NullIndex; // item was found, so return NullIndex to indicate it was not added
 				}
 
-				index = t.nextIndex & MarkNextIndexBitMaskInverted;;
+				index = t.nextIndex & MarkNextIndexBitMaskInverted; ;
 			}
 
 			if (nextBlankIndex >= slots.Length)
@@ -1622,7 +1622,7 @@ namespace Motvin.Collections
 				int hash = (comparer.GetHashCode(item) & HighBitNotSet);
 				int hashIndex = hash % bucketsModSize;
 
-				for (int index = buckets[hashIndex]; index != NullIndex; )
+				for (int index = buckets[hashIndex]; index != NullIndex;)
 				{
 					ref TNode t = ref slots[index];
 
@@ -1657,9 +1657,9 @@ namespace Motvin.Collections
 		/// <returns>True if the item was removed, or false if the item was not contained in the FastHashSet.</returns>
 		public bool Remove(T item)
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
@@ -1670,7 +1670,7 @@ namespace Motvin.Collections
 
 				int priorIndex = NullIndex;
 
-				for (int index = buckets[hashIndex]; index != NullIndex; )
+				for (int index = buckets[hashIndex]; index != NullIndex;)
 				{
 					ref TNode t = ref slots[index];
 
@@ -1857,9 +1857,9 @@ namespace Motvin.Collections
 		/// <returns>Returns a ref to the found item or to the added item.</returns>
 		public ref T FindOrAdd(in T item, out bool isFound)
 		{
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 			isFound = false;
 #if !Exclude_No_Hash_Array_Implementation
@@ -2064,7 +2064,7 @@ namespace Motvin.Collections
 
 			int priorIndex = NullIndex;
 
-			for (int index = buckets[hashIndex]; index != NullIndex; )
+			for (int index = buckets[hashIndex]; index != NullIndex;)
 			{
 				ref TNode t = ref slots[index];
 
@@ -2087,7 +2087,7 @@ namespace Motvin.Collections
 		{
 			int hashIndex = hash % bucketsModSize;
 
-			for (int index = buckets[hashIndex]; index != NullIndex; )
+			for (int index = buckets[hashIndex]; index != NullIndex;)
 			{
 				ref TNode t = ref slots[index];
 
@@ -2096,7 +2096,7 @@ namespace Motvin.Collections
 					return true; // item was found, so return true
 				}
 
-				index = t.nextIndex;;
+				index = t.nextIndex; ;
 			}
 			return false;
 		}
@@ -2205,7 +2205,7 @@ namespace Motvin.Collections
 
 		private FoundType FindInSlotsArrayAndMark(in T item, out int foundNodeIndex)
 		{
-			int hash = (comparer.GetHashCode(item) & HighBitNotSet);;
+			int hash = (comparer.GetHashCode(item) & HighBitNotSet); ;
 			int hashIndex = hash % bucketsModSize;
 
 			int index = buckets[hashIndex];
@@ -2419,10 +2419,10 @@ namespace Motvin.Collections
 			}
 
 			// Note: HashSet doesn't seem to increment this unless it really changes something - like doing an Add(3) when 3 is already in the hashset doesn't increment, same as doing a UnionWith with an empty set as the param.
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
-					   
+#endif
+
 			if (other == this)
 			{
 				return;
@@ -2475,7 +2475,7 @@ namespace Motvin.Collections
 						count++;
 					}
 
-			found:;
+				found:;
 				}
 			}
 #endif
@@ -2492,9 +2492,9 @@ namespace Motvin.Collections
 				throw new ArgumentNullException(nameof(other), "Value cannot be null.");
 			}
 
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 			if (other == this)
 			{
 				Clear();
@@ -2524,9 +2524,9 @@ namespace Motvin.Collections
 				return;
 			}
 
-			#if !Exclude_Check_For_Set_Modifications_In_Enumerator
+#if !Exclude_Check_For_Set_Modifications_In_Enumerator
 			incrementForEverySetModification++;
-			#endif
+#endif
 
 			// if hashing, find each item in the slots array and mark anything found, but remove from being found again
 
@@ -2591,7 +2591,7 @@ namespace Motvin.Collections
 						}
 					}
 
-			found:
+				found:
 					if (foundItemCount == count)
 					{
 						// all items in the set were found, so there is nothing to remove - the set isn't changed
@@ -2607,7 +2607,7 @@ namespace Motvin.Collections
 				{
 					// remove any items that are unmarked (unfound)
 					// go backwards because this can be faster
-					for (i = count - 1; i >= 0 ; i--)
+					for (i = count - 1; i >= 0; i--)
 					{
 						uint mask = (1u << i);
 						if ((foundItemBits & mask) == 0)
@@ -2632,7 +2632,7 @@ namespace Motvin.Collections
 								i++;
 
 								int k = i;
-								for ( ; j < count; j++, k++)
+								for (; j < count; j++, k++)
 								{
 									noHashArray[k] = noHashArray[j];
 								}
@@ -2754,7 +2754,7 @@ namespace Motvin.Collections
 					// if here then item was not found
 					notFoundAtLeastOne = true;
 
-			found:
+				found:
 					if (notFoundAtLeastOne && foundItemCount == count)
 					{
 						// true means all of the items in the set were found in other and at least one item in other was not found in the set
@@ -2848,7 +2848,7 @@ namespace Motvin.Collections
 						}
 					}
 
-			found:
+				found:
 					if (foundItemCount == count)
 					{
 						break;
@@ -2899,7 +2899,7 @@ namespace Motvin.Collections
 				return true;
 			}
 
-someItemsInOther:
+		someItemsInOther:
 
 #if !Exclude_No_Hash_Array_Implementation
 			if (IsHashing)
@@ -2960,7 +2960,7 @@ someItemsInOther:
 					// if here then item was not found
 					return false;
 
-			found:
+				found:
 					if (foundItemCount == count)
 					{
 						break;
@@ -3006,7 +3006,7 @@ someItemsInOther:
 				return true;
 			}
 
-someItemsInOther:
+		someItemsInOther:
 
 			if (count == 0)
 			{
@@ -3045,7 +3045,7 @@ someItemsInOther:
 					// if here then item was not found
 					return false;
 
-			found:;
+				found:;
 
 				}
 
@@ -3245,7 +3245,7 @@ someItemsInOther:
 					}
 					// if here then item was not found
 					return false;
-			found:;
+				found:;
 				}
 
 				return foundItemCount == count;
@@ -3311,7 +3311,7 @@ someItemsInOther:
 
 			int priorIndex = NullIndex;
 
-			for (int index = buckets[hashIndex]; index != NullIndex; )
+			for (int index = buckets[hashIndex]; index != NullIndex;)
 			{
 				ref TNode t = ref slots[index];
 
@@ -3360,7 +3360,7 @@ someItemsInOther:
 			}
 			return; // item not found
 		}
-		
+
 		/// <summary>
 		/// Removes any items in the FastHashSet where the <paramref name="match"/> predicate is true for that item.
 		/// </summary>
@@ -3392,7 +3392,7 @@ someItemsInOther:
 				{
 					priorIndex = NullIndex; // 0 means use buckets array
 
-					for (int index = buckets[i]; index != NullIndex; )
+					for (int index = buckets[i]; index != NullIndex;)
 					{
 						ref TNode t = ref slots[index];
 
@@ -3441,7 +3441,7 @@ someItemsInOther:
 			else
 			{
 				int i;
-				for (i = count - 1; i >= 0 ; i--)
+				for (i = count - 1; i >= 0; i--)
 				{
 					if (match.Invoke(noHashArray[i]))
 					{
@@ -3451,7 +3451,7 @@ someItemsInOther:
 						{
 							int j = i + 1;
 							int k = i;
-							for ( ; j < count; j++, k++)
+							for (; j < count; j++, k++)
 							{
 								noHashArray[k] = noHashArray[j];
 							}
@@ -3876,7 +3876,7 @@ someItemsInOther:
 			return Level.CompareTo(other.Level);
 		}
 	}
-	
+
 #if DEBUG
 	public static class DebugOutput
 	{
